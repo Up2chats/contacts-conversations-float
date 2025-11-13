@@ -323,13 +323,29 @@
     return (a + b).trim();
   };
 
-  const getName = (item) => {
-    const c = item.contact || {};
-    const first = c.firstName || "";
-    const last = c.lastName || "";
-    if (!first && !last) return c.fullName || "Sin nombre";
-    return `${first} ${last}`.trim();
-  };
+const getName = (item) => {
+  // objeto contact anidado (a veces viene vacío)
+  const c = item.contact || {};
+
+  const first = c.firstName || c.first_name || "";
+  const last  = c.lastName  || c.last_name  || "";
+
+  // primero intentamos armar nombre con first + last
+  let name = `${first} ${last}`.trim();
+
+  // si eso viene vacío, usamos otros campos
+  if (!name) {
+    name =
+      c.fullName ||
+      c.full_name ||
+      item.contactName ||      // <-- el que viste en la API
+      item.contact_name ||
+      "";
+  }
+
+  // si aun así no hay nada, dejamos "Sin nombre"
+  return name || "Sin nombre";
+};
 
   const getSnippet = (item) => {
     const text = item.lastMessageBody || "";
