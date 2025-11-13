@@ -7,7 +7,7 @@
    *  CONFIG
    * ========================= */
 
-  const REFRESH_INTERVAL_MS = 10000; // auto refresh cada 10s
+  const REFRESH_INTERVAL_MS = 10000; // ⏱ auto refresh cada 10s
   const PAGE_LIMIT = 20;
 
   const API_BASE = "https://services.leadconnectorhq.com";
@@ -254,6 +254,18 @@
         color:#6b7280;
         flex:0 0 auto;
       }
+      #ghl-conv-load-more{
+        margin:0 16px 10px 16px;
+        padding:6px 12px;
+        font-size:12px;
+        border-radius:999px;
+        border:1px solid #e5e7eb;
+        background:#f9fafb;
+        cursor:pointer;
+      }
+      #ghl-conv-load-more:hover{
+        background:#f3f4f6;
+      }
     `;
     document.head.appendChild(s);
   };
@@ -297,6 +309,7 @@
       "sortBy=last_message_date",
     ];
 
+    // también dejamos que el backend filtre por searchTerm
     if (searchTerm && searchTerm.trim()) {
       params.push("searchTerm=" + encodeURIComponent(searchTerm.trim()));
     }
@@ -304,10 +317,6 @@
     const path = "/conversations/search?" + params.join("&");
     return apiFetch("GET", path, token);
   };
-
-  /* =========================
-   *  HELPERS
-   * ========================= */
 
   const formatTime = (iso) => {
     if (!iso) return "";
@@ -331,7 +340,7 @@
       name =
         c.fullName ||
         c.full_name ||
-        item.contactName ||
+        item.contactName || // el que viste en la API
         item.contact_name ||
         "";
     }
@@ -342,9 +351,12 @@
   const getInitials = (item) => {
     const name = getName(item);
     const parts = name.split(/\s+/).filter(Boolean);
+
     if (!parts.length) return "CT";
+
     const a = (parts[0][0] || "").toUpperCase();
     const b = (parts[1]?.[0] || "").toUpperCase();
+
     return (a + b).trim();
   };
 
@@ -361,16 +373,8 @@
     return String(ch).toUpperCase();
   };
 
-  const debounce = (fn, ms = 200) => {
-    let t;
-    return (...args) => {
-      clearTimeout(t);
-      t = setTimeout(() => fn(...args), ms);
-    };
-  };
-
   /* =========================
-   *  STATE
+   *  PANEL STATE
    * ========================= */
 
   const state = {
@@ -381,6 +385,22 @@
     currentLimit: PAGE_LIMIT,
     total: null,
     dom: {},
+  };
+
+  const stopAutoRefresh = () => {
+    if (state.autoRefreshTimer) {
+      clearInterval(state.autoRefreshTimer);
+      state.autoRefreshTimer = null;
+    }
+  };
+
+  const startAutoRefresh = () => {
+    stopAutoRefresh();
+    if (!REFRESH_INTERVAL_MS || REFRESH_INTERVAL_MS <= 0) return;
+    state.autoRefreshTimer = setInterval(() => {
+      if (!state.open) return;
+      loadConversations(false);
+    }, REFRESH_INTERVAL_MS);
   };
 
   /* =========================
@@ -404,7 +424,9 @@
         .toLowerCase();
 
       return (
-        name.includes(term) || snippet.includes(term) || phone.includes(term)
+        name.includes(term) ||
+        snippet.includes(term) ||
+        phone.includes(term)
       );
     });
   };
@@ -425,4 +447,366 @@
       const row = document.createElement("div");
       row.className = "ghl-conv-row";
 
-      const avatar = document.create
+      const avatar = document.createElement("div");
+      avatar.className = "ghl-conv-avatar";
+      avatar.textContent = getInitials(item);
+
+      const main = document.createElement("div");
+      main.className = "ghl-conv-main";
+
+      const top = document.createElement("div");
+      top.className = "ghl-conv-top";
+
+      const nameEl = document.createElement("div");
+      nameEl.className = "ghl-conv-name";
+      const name = getName(item);
+      nameEl.textContent = name;
+      nameEl.title = name;
+
+      const timeEl = document.createElement("div");
+      timeEl.className = "ghl-conv-time";
+      timeEl.textContent = formatTime(item.lastMessageDate);
+
+      top.appendChild(nameEl);
+      top.appendChild(timeEl);
+
+      const bottom = document.createElement("div");
+      bottom.className = "ghl-conv-bottom";
+
+      const chEl = document.createElement("div");
+      chEl.className = "ghl-conv-channel";
+      chEl.textContent = getChannel(item);
+
+      const snip = document.createElement("div");
+      snip.className = "ghl-conv-snippet";
+      snip.textContent = getSnippet(item);
+
+      bottom.appendChild(chEl);
+      bottom.appendChild(snip);
+
+      const unread = (item.unreadCount || item.unread_count || 0) | 0;
+      if (unread > 0) {
+        const badge = document.createElement("div");
+        badge.className = "ghl-conv-unread";
+        badge.textContent = unread > 9 ? "9+" : String(unread);
+        bottom.appendChild(badge);
+      }
+
+      main.appendChild(top);
+      main.appendChild(bottom);
+
+      row.appendChild(avatar);
+      row.appendChild(main);
+
+      row.addEventListener("click", () => {
+        const contactId =
+          item.contactId ||
+          item.contact?.id ||
+          item.contact?.contactId ||
+          null;
+        const locId = getLocationId();
+        const convId = item.id;
+
+        if (window.ghlOpenFloatingConversation && contactId) {
+          window.ghlOpenFloatingConversation(contactId);
+        } else if (locId && convId) {
+          const url = `https://app.gohighlevel.com/v2/location/${locId}/conversations/conversations/${convId}?category=team-inbox&tab=all`;
+          window.open(url, "_blank");
+        }
+      });
+
+      list.appendChild(row);
+    });
+  };
+
+  const setMeta = (shownCount, total) => {
+    if (!state.dom.meta) return;
+    const term = state.currentSearchTerm?.trim();
+    const totalSafe = total ?? shownCount;
+    const label = term
+      ? `Resultados: ${shownCount} conversación(es) (de ${totalSafe}) para “${term}”`
+      : `Mostrando ${shownCount} de ${totalSafe} conversaciones`;
+    state.dom.meta.textContent = label;
+  };
+
+  const updateLoadMoreButton = (fetchedCount, total) => {
+    const btn = state.dom.loadMore;
+    if (!btn) return;
+
+    const t = total ?? fetchedCount;
+
+    if (fetchedCount >= t) {
+      btn.style.display = "none";
+      btn.disabled = false;
+      btn.textContent = "Cargar más conversaciones";
+      return;
+    }
+
+    btn.style.display = "block";
+    btn.disabled = false;
+    btn.textContent = "Cargar más conversaciones";
+  };
+
+  /* =========================
+   *  LOAD
+   * ========================= */
+
+  const loadConversations = async (showSpinner = true) => {
+    const locId = getLocationId();
+    const token = getToken();
+    if (!locId || !token) {
+      console.warn("Sin locationId o token configurado para conversaciones.");
+      return;
+    }
+
+    const reqId = ++state.lastRequestId;
+
+    if (showSpinner && state.dom.status) {
+      state.dom.status.textContent = "Actualizando conversaciones...";
+    }
+
+    try {
+      const data = await fetchConversations(
+        locId,
+        token,
+        state.currentLimit || PAGE_LIMIT,
+        state.currentSearchTerm
+      );
+      if (reqId !== state.lastRequestId) return;
+
+      const rawItems =
+        data?.conversations ||
+        data?.items ||
+        data?.records ||
+        data?.data ||
+        [];
+
+      const items = filterBySearch(rawItems);
+
+      const total =
+        data?.total ||
+        data?.totalCount ||
+        rawItems.length;
+
+      state.total = total;
+
+      renderList(items);
+      setMeta(items.length, total);
+      updateLoadMoreButton(rawItems.length, total);
+
+      if (state.dom.status) state.dom.status.textContent = "";
+    } catch (e) {
+      console.error("Error cargando conversaciones", e);
+      if (state.dom.status) {
+        state.dom.status.textContent =
+          "Error al cargar conversaciones. Reintenta más tarde.";
+      }
+    }
+  };
+
+  /* =========================
+   *  PANEL UI
+   * ========================= */
+
+  const openPanel = () => {
+    ensureStyles();
+    if (state.open) return;
+
+    let backdrop = document.getElementById("ghl-conv-panel-backdrop");
+    if (!backdrop) {
+      backdrop = document.createElement("div");
+      backdrop.id = "ghl-conv-panel-backdrop";
+      document.body.appendChild(backdrop);
+    }
+
+    const panel = document.createElement("div");
+    panel.id = "ghl-conv-panel";
+
+    // header
+    const header = document.createElement("div");
+    header.id = "ghl-conv-panel-header";
+
+    const title = document.createElement("h3");
+    title.textContent = "Conversaciones";
+
+    const hRight = document.createElement("div");
+    hRight.id = "ghl-conv-panel-header-right";
+
+    const btnRefresh = document.createElement("button");
+    btnRefresh.type = "button";
+    btnRefresh.className = "ghl-conv-icon-btn";
+    btnRefresh.title = "Actualizar ahora";
+    btnRefresh.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="23 4 23 10 17 10"></polyline>
+        <polyline points="1 20 1 14 7 14"></polyline>
+        <path d="M3.51 9a9 9 0 0 1 14.88-3.36L23 10"></path>
+        <path d="M1 14l4.62 4.36A9 9 0 0 0 20.49 15"></path>
+      </svg>`;
+    btnRefresh.onclick = () => loadConversations(true);
+
+    const btnClose = document.createElement("button");
+    btnClose.type = "button";
+    btnClose.id = "ghl-conv-panel-close";
+    btnClose.textContent = "Cerrar";
+    btnClose.onclick = () => closePanel();
+
+    hRight.appendChild(btnRefresh);
+    hRight.appendChild(btnClose);
+
+    header.appendChild(title);
+    header.appendChild(hRight);
+
+    // buscador
+    const searchWrap = document.createElement("div");
+    searchWrap.id = "ghl-conv-search-wrap";
+    const search = document.createElement("input");
+    search.id = "ghl-conv-search";
+    search.type = "text";
+    search.placeholder = "Buscar por nombre o mensaje…";
+    search.autocomplete = "off";
+    searchWrap.appendChild(search);
+
+    const meta = document.createElement("div");
+    meta.id = "ghl-conv-meta";
+
+    const list = document.createElement("div");
+    list.id = "ghl-conv-list";
+
+    const status = document.createElement("div");
+    status.id = "ghl-conv-status";
+
+    // botón cargar más
+    const loadMore = document.createElement("button");
+    loadMore.id = "ghl-conv-load-more";
+    loadMore.textContent = "Cargar más conversaciones";
+    loadMore.style.display = "none";
+    loadMore.onclick = () => {
+      loadMore.disabled = true;
+      loadMore.textContent = "Cargando...";
+      state.currentLimit = (state.currentLimit || PAGE_LIMIT) + PAGE_LIMIT;
+      loadConversations(true);
+    };
+
+    panel.appendChild(header);
+    panel.appendChild(searchWrap);
+    panel.appendChild(meta);
+    panel.appendChild(list);
+    panel.appendChild(status);
+    panel.appendChild(loadMore);
+
+    backdrop.appendChild(panel);
+
+    state.open = true;
+    state.dom = { panel, list, meta, status, search, loadMore };
+
+    panel.style.top = window.scrollY + 80 + "px";
+
+    const debounce = (fn, ms) => {
+      let t;
+      return (...args) => {
+        clearTimeout(t);
+        t = setTimeout(() => fn(...args), ms);
+      };
+    };
+
+    const onSearch = debounce(() => {
+      state.currentSearchTerm = search.value || "";
+      state.currentLimit = PAGE_LIMIT;
+      loadConversations(true);
+    }, 400);
+
+    search.addEventListener("input", onSearch);
+
+    loadConversations(true);
+    startAutoRefresh();
+  };
+
+  const closePanel = () => {
+    stopAutoRefresh();
+    state.open = false;
+    state.lastRequestId++;
+    const panel = document.getElementById("ghl-conv-panel");
+    if (panel) panel.remove();
+
+    // cerrar también las ventanas flotantes de ghl-float.js
+    try {
+      if (window.ghlCloseAllFloatingConversations) {
+        window.ghlCloseAllFloatingConversations();
+      }
+    } catch (e) {
+      console.warn("No se pudieron cerrar las ventanas flotantes:", e);
+    }
+  };
+
+  /* =========================
+   *  BOTÓN EN VISTA
+   * ========================= */
+
+  const makeToggleButton = () => {
+    const span = document.createElement("span");
+    span.className = BTN_CLASS;
+    span.title = "Ver conversaciones recientes";
+    span.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+      </svg>`;
+    span.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (state.open) {
+        closePanel();
+      } else {
+        openPanel();
+      }
+    });
+    return span;
+  };
+
+  const injectButton = () => {
+    ensureStyles();
+    const views =
+      document.querySelector("div.views") ||
+      document.querySelector("div.d-flex.views");
+    if (!views) return;
+    if (views.querySelector("." + BTN_CLASS)) return;
+    const btn = makeToggleButton();
+    views.appendChild(btn);
+  };
+
+  const debounce = (fn, ms = 200) => {
+    let t;
+    return (...args) => {
+      clearTimeout(t);
+      t = setTimeout(() => fn(...args), ms);
+    };
+  };
+
+  const handle = debounce(injectButton, 200);
+  const observer = new MutationObserver(handle);
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+  });
+
+  ["pushState", "replaceState"].forEach((fn) => {
+    try {
+      const orig = history[fn];
+      history[fn] = function () {
+        const ret = orig.apply(this, arguments);
+        window.dispatchEvent(new Event("ghl:navigation"));
+        return ret;
+      };
+    } catch {}
+  });
+  window.addEventListener("popstate", () =>
+    window.dispatchEvent(new Event("ghl:navigation"))
+  );
+  window.addEventListener("ghl:navigation", handle);
+
+  handle();
+  setTimeout(handle, 500);
+  setTimeout(handle, 1000);
+})();
