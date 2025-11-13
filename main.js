@@ -645,21 +645,20 @@ const getName = (item) => {
     startAutoRefresh();
   };
 
-const closePanel = () => {
+  const closePanel = () => {
     stopAutoRefresh();
     state.open = false;
     state.lastRequestId++;
-
     const panel = document.getElementById("ghl-conv-panel");
     if (panel) panel.remove();
 
-    // 👇 NUEVO: cerrar también todas las ventanas flotantes de conversaciones
-    if (window.ghlCloseAllFloatingConversations) {
-      try {
+    // >>> NUEVO: cerrar también todas las ventanas flotantes de ghl-float.js
+    try {
+      if (window.ghlCloseAllFloatingConversations) {
         window.ghlCloseAllFloatingConversations();
-      } catch (e) {
-        console.error("Error al cerrar conversaciones flotantes:", e);
       }
+    } catch (e) {
+      console.warn("No se pudieron cerrar las ventanas flotantes:", e);
     }
   };
 
