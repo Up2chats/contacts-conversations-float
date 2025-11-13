@@ -311,18 +311,19 @@
     });
   };
 
-  const getInitials = (item) => {
-    const c = item.contact || {};
-    const first = c.firstName || "";
-    const last = c.lastName || "";
-    const name = `${first} ${last}`.trim() || c.fullName || "";
-    const parts = name.split(/\s+/).filter(Boolean);
-    if (!parts.length) return "CT";
-    const a = (parts[0][0] || "").toUpperCase();
-    const b = (parts[1]?.[0] || "").toUpperCase();
-    return (a + b).trim();
-  };
+const getInitials = (item) => {
+  const name = getName(item); // reutilizamos la función de arriba
+  const parts = name.split(/\s+/).filter(Boolean);
 
+  if (!parts.length) return "CT";
+
+  const a = (parts[0][0] || "").toUpperCase();
+  const b = (parts[1]?.[0] || "").toUpperCase();
+
+  return (a + b).trim();
+};
+
+  
 const getName = (item) => {
   // objeto contact anidado (a veces viene vacío)
   const c = item.contact || {};
