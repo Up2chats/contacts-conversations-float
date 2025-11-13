@@ -1,112 +1,106 @@
 (() => {
   "use strict";
-  if (window.__GHL_CONV_LIST_V1__) return;
-  window.__GHL_CONV_LIST_V1__ = true;
+  if (window.__GHL_CONVERSATIONS_FLOAT__) return;
+  window.__GHL_CONVERSATIONS_FLOAT__ = true;
 
-  /* ======================================
-   *  CONFIGURACIÓN
-   * ====================================== */
+  /* =========================
+   *  CONFIG
+   * ========================= */
 
-  // ⏱ Auto-refresh en milisegundos (10s)
-  const DEFAULT_REFRESH_MS = 10000;
-  const DEFAULT_LIMIT = 20;
+  const REFRESH_INTERVAL_MS = 10000; // ⏱ auto refresh cada 10s
+  const PAGE_LIMIT = 20;
 
   const API_BASE = "https://services.leadconnectorhq.com";
-  const CONV_VERSION = "2021-04-15";
+  const API_VERSION = "2021-04-15";
 
-  const STYLE_ID = "ghl-convlist-style";
-  const TOGGLE_BTN_ID = "ghl-convlist-toggle-btn";
-  const PANEL_ID = "ghl-convlist-panel";
+  const STYLE_ID = "ghl-conv-panel-style";
+  const BTN_CLASS = "ghl-conv-toggle-btn";
 
-  // Leemos config desde el <script ...> que carga este archivo
-  const currentScript = document.currentScript;
-  const LOCATION_ID =
-    currentScript?.getAttribute("data-location-id") ||
-    (location.pathname.match(/\/location\/([^/]+)/) || [])[1] ||
-    "";
-  const TOKEN = currentScript?.getAttribute("data-token") || "";
-  const REFRESH_MS = Number(
-    currentScript?.getAttribute("data-refresh-ms") || DEFAULT_REFRESH_MS
-  );
+  const getLocationIdFromPath = () =>
+    (location.pathname.match(/\/location\/([^/]+)/) || [])[1] || null;
 
-  /* ======================================
+  // leemos data-* del script
+  const currentScript = document.currentScript || (function () {
+    const scripts = document.getElementsByTagName("script");
+    return scripts[scripts.length - 1];
+  })();
+
+  const DATA_LOCATION_ID = currentScript?.dataset.locationId || null;
+  const DATA_TOKEN = currentScript?.dataset.token || null;
+
+  const getLocationId = () => DATA_LOCATION_ID || getLocationIdFromPath();
+  const getToken = () => DATA_TOKEN;
+
+  /* =========================
    *  ESTILOS
-   * ====================================== */
+   * ========================= */
 
-  const ensureStyle = () => {
+  const ensureStyles = () => {
     if (document.getElementById(STYLE_ID)) return;
     const s = document.createElement("style");
     s.id = STYLE_ID;
     s.textContent = `
-      /* Botón en la barra de vistas (junto a Kanban / Lista) */
-      #${TOGGLE_BTN_ID}{
+      .${BTN_CLASS}{
         display:inline-flex;
         align-items:center;
         justify-content:center;
-        width:32px;
-        height:32px;
-        border-radius:999px;
-        margin-left:8px;
+        margin-left:6px;
         cursor:pointer;
-        color:#4b5563;
-        transition:background .15s ease, color .15s ease;
       }
-      #${TOGGLE_BTN_ID}:hover{
-        background:#eef2ff;
-        color:#1d4ed8;
-      }
-      #${TOGGLE_BTN_ID} svg{
+      .${BTN_CLASS} svg{
         width:18px;
         height:18px;
+        color:#4b5563;
+      }
+      .${BTN_CLASS}:hover svg{
+        color:#2563eb;
       }
 
-      /* Panel flotante */
-      #${PANEL_ID}{
+      #ghl-conv-panel-backdrop{
         position:fixed;
-        top:80px;
+        inset:0;
+        pointer-events:none;
+        z-index:100000;
+      }
+      #ghl-conv-panel{
+        position:absolute;
         right:40px;
-        width:360px;
-        max-width:90vw;
-        height:580px;
-        max-height:80vh;
+        top:80px;
+        width:380px;
+        max-width:calc(100vw - 40px);
+        height:520px;
+        max-height:calc(100vh - 40px);
         background:#fff;
         border-radius:18px;
         box-shadow:0 22px 60px rgba(15,23,42,0.32);
         display:flex;
         flex-direction:column;
-        z-index:100020;
+        pointer-events:auto;
         overflow:hidden;
-        resize:both;
-        border:1px solid #e5e7eb;
       }
-      #${PANEL_ID}.ghl-hidden{
-        display:none;
-      }
-
-      .ghl-convlist-header{
+      #ghl-conv-panel-header{
         flex:0 0 auto;
-        padding:10px 14px;
+        padding:12px 16px;
         display:flex;
         align-items:center;
         justify-content:space-between;
-        gap:8px;
         border-bottom:1px solid #e5e7eb;
-        cursor:move;
-        user-select:none;
+        gap:8px;
       }
-      .ghl-convlist-title{
+      #ghl-conv-panel-header h3{
+        margin:0;
         font-size:15px;
         font-weight:600;
-        color:#0f172a;
+        color:#111827;
       }
-      .ghl-convlist-header-right{
+      #ghl-conv-panel-header-right{
         display:flex;
         align-items:center;
         gap:6px;
       }
-      .ghl-convlist-icon-btn{
-        width:30px;
-        height:30px;
+      .ghl-conv-icon-btn{
+        width:32px;
+        height:32px;
         border-radius:999px;
         border:1px solid #e5e7eb;
         background:#f9fafb;
@@ -115,77 +109,68 @@
         justify-content:center;
         cursor:pointer;
       }
-      .ghl-convlist-icon-btn svg{
+      .ghl-conv-icon-btn svg{
         width:16px;
         height:16px;
         color:#4b5563;
       }
-      .ghl-convlist-icon-btn:hover{
+      .ghl-conv-icon-btn:hover{
         background:#eef2ff;
         border-color:#c7d2fe;
       }
-
-      .ghl-convlist-body{
-        flex:1 1 auto;
-        display:flex;
-        flex-direction:column;
-        padding:8px 10px 10px 10px;
-        gap:6px;
+      #ghl-conv-panel-close{
+        padding:6px 12px;
+        border-radius:999px;
+        border:1px solid #e5e7eb;
         background:#f9fafb;
-        overflow:hidden;
+        cursor:pointer;
+        font-size:13px;
+      }
+      #ghl-conv-panel-close:hover{
+        background:#f3f4f6;
       }
 
-      .ghl-convlist-search{
+      #ghl-conv-search-wrap{
         flex:0 0 auto;
-        margin-bottom:4px;
+        padding:8px 16px 6px 16px;
       }
-      .ghl-convlist-search input{
+      #ghl-conv-search{
         width:100%;
         border-radius:999px;
         border:1px solid #d1d5db;
-        padding:6px 11px;
+        padding:7px 14px;
         font-size:13px;
         outline:none;
+        background:#f9fafb;
+      }
+      #ghl-conv-search:focus{
+        border-color:#2563eb;
         background:#fff;
       }
-      .ghl-convlist-search input:focus{
-        border-color:#94a3b8;
-      }
-
-      .ghl-convlist-status{
-        font-size:11px;
+      #ghl-conv-meta{
+        padding:0 16px 6px 16px;
+        font-size:12px;
         color:#6b7280;
-        padding:0 2px 2px 2px;
         flex:0 0 auto;
       }
 
-      .ghl-convlist-list{
+      #ghl-conv-list{
         flex:1 1 auto;
         overflow-y:auto;
-        border-radius:10px;
-        background:#fff;
-        border:1px solid #e5e7eb;
+        padding:0 6px 6px 6px;
       }
-
-      .ghl-convlist-empty{
-        font-size:13px;
-        color:#6b7280;
-        text-align:center;
-        padding:18px 12px;
-      }
-
-      .ghl-convlist-item{
+      .ghl-conv-row{
         display:flex;
         align-items:flex-start;
-        gap:8px;
-        padding:7px 10px;
+        padding:8px 10px;
+        border-radius:12px;
         cursor:pointer;
-        border-bottom:1px solid #f3f4f6;
+        gap:8px;
       }
-      .ghl-convlist-item:hover{
-        background:#f9fafb;
+      .ghl-conv-row:hover{
+        background:#f3f4ff;
       }
-      .ghl-convlist-avatar{
+      .ghl-conv-avatar{
         width:32px;
         height:32px;
         border-radius:999px;
@@ -198,113 +183,127 @@
         font-weight:600;
         flex-shrink:0;
       }
-      .ghl-convlist-main{
+      .ghl-conv-main{
         flex:1 1 auto;
         min-width:0;
       }
-      .ghl-convlist-row1{
+      .ghl-conv-top{
         display:flex;
         align-items:center;
         justify-content:space-between;
-        gap:6px;
+        gap:4px;
         margin-bottom:2px;
       }
-      .ghl-convlist-name{
+      .ghl-conv-name{
         font-size:13px;
         font-weight:600;
         color:#111827;
+        max-width:210px;
         white-space:nowrap;
         overflow:hidden;
         text-overflow:ellipsis;
-        max-width:200px;
       }
-      .ghl-convlist-time{
+      .ghl-conv-time{
         font-size:11px;
         color:#6b7280;
-        white-space:nowrap;
         flex-shrink:0;
       }
-      .ghl-convlist-row2{
+      .ghl-conv-bottom{
         display:flex;
         align-items:center;
-        gap:4px;
+        gap:6px;
       }
-      .ghl-convlist-channel{
+      .ghl-conv-channel{
         font-size:11px;
         color:#6b7280;
         flex-shrink:0;
       }
-      .ghl-convlist-preview{
+      .ghl-conv-snippet{
         font-size:12px;
         color:#4b5563;
+        max-width:210px;
         white-space:nowrap;
         overflow:hidden;
         text-overflow:ellipsis;
       }
-      .ghl-convlist-unread{
+      .ghl-conv-unread{
+        min-width:16px;
+        height:16px;
+        border-radius:999px;
         background:#2563eb;
         color:#fff;
-        border-radius:999px;
         font-size:11px;
-        padding:0 5px;
-        margin-left:4px;
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        padding:0 4px;
+        margin-left:auto;
+        flex-shrink:0;
+      }
+      .ghl-conv-empty{
+        padding:20px 16px;
+        font-size:13px;
+        color:#6b7280;
+        text-align:center;
+      }
+      #ghl-conv-status{
+        padding:4px 16px 8px 16px;
+        font-size:11px;
+        color:#6b7280;
+        flex:0 0 auto;
       }
     `;
     document.head.appendChild(s);
   };
 
-  /* ======================================
-   *  HELPERS
-   * ====================================== */
+  /* =========================
+   *  API
+   * ========================= */
 
-  const apiFetch = (path, params = {}) =>
+  const apiFetch = (method, path, token) =>
     new Promise((resolve, reject) => {
-      if (!TOKEN) {
-        reject(new Error("No token configurado para conversaciones"));
-        return;
-      }
-      const url =
-        API_BASE +
-        path +
-        (path.includes("?") ? "&" : "?") +
-        new URLSearchParams(params).toString();
-
       const xhr = new XMLHttpRequest();
-      xhr.open("GET", url, true);
+      xhr.open(method, API_BASE + path, true);
       xhr.setRequestHeader("Accept", "application/json");
       xhr.setRequestHeader("Content-Type", "application/json");
-      xhr.setRequestHeader("Version", CONV_VERSION);
-      xhr.setRequestHeader("Authorization", "Bearer " + TOKEN);
-
+      xhr.setRequestHeader("Version", API_VERSION);
+      xhr.setRequestHeader("Authorization", "Bearer " + token);
       xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              resolve(xhr.responseText ? JSON.parse(xhr.responseText) : null);
-            } catch (e) {
-              resolve(null);
-            }
-          } else {
-            reject(new Error("HTTP " + xhr.status + " " + xhr.responseText));
+        if (xhr.readyState !== 4) return;
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(xhr.responseText ? JSON.parse(xhr.responseText) : null);
+          } catch (e) {
+            resolve(null);
           }
+        } else {
+          reject(
+            new Error("HTTP " + xhr.status + " - " + (xhr.responseText || ""))
+          );
         }
       };
-      xhr.onerror = () => reject(new Error("Error de red o CORS"));
-      xhr.send();
+      xhr.onerror = () => reject(new Error("Error de red"));
+      xhr.send(null);
     });
 
-  const fetchConversations = () =>
-    apiFetch("/conversations/search", {
-      locationId: LOCATION_ID,
-      limit: DEFAULT_LIMIT,
-      status: "all",
-      sort: "desc",
-      sortBy: "last_message_date",
-    });
+  const fetchConversations = (locId, token, searchTerm) => {
+    const params = [
+      "locationId=" + encodeURIComponent(locId),
+      "limit=" + PAGE_LIMIT,
+      "status=all",
+      "sort=desc",
+      "sortBy=last_message_date",
+    ];
+    if (searchTerm && searchTerm.trim()) {
+      params.push("searchTerm=" + encodeURIComponent(searchTerm.trim()));
+    }
+    const path = "/conversations/search?" + params.join("&");
+    return apiFetch("GET", path, token);
+  };
 
-  const formatTime = (isoStr) => {
-    if (!isoStr) return "";
-    const d = new Date(isoStr);
+  const formatTime = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return "";
     return d.toLocaleTimeString(undefined, {
       hour: "numeric",
@@ -312,400 +311,368 @@
     });
   };
 
-  const getName = (conv) => {
-    const c = conv.contact || {};
-    const full =
-      conv.contactName ||
-      c.name ||
-      [c.firstName, c.lastName].filter(Boolean).join(" ");
-    return full || "Sin nombre";
-  };
-
-  const getInitials = (name) => {
-    const parts = (name || "").split(/\s+/).filter(Boolean);
+  const getInitials = (item) => {
+    const c = item.contact || {};
+    const first = c.firstName || "";
+    const last = c.lastName || "";
+    const name = `${first} ${last}`.trim() || c.fullName || "";
+    const parts = name.split(/\s+/).filter(Boolean);
     if (!parts.length) return "CT";
-    const a = (parts[0]?.[0] || "").toUpperCase();
+    const a = (parts[0][0] || "").toUpperCase();
     const b = (parts[1]?.[0] || "").toUpperCase();
     return (a + b).trim();
   };
 
-  const getPreview = (conv) => {
-    const msg =
-      conv.lastMessage?.body ||
-      conv.last_message_body ||
-      conv.lastMessageBody ||
-      conv.lastMessage?.text ||
-      conv.lastMessage?.message ||
-      "";
-    return msg || "(sin contenido)";
+  const getName = (item) => {
+    const c = item.contact || {};
+    const first = c.firstName || "";
+    const last = c.lastName || "";
+    if (!first && !last) return c.fullName || "Sin nombre";
+    return `${first} ${last}`.trim();
   };
 
-  const getChannelLabel = (conv) => {
-    const ch =
-      conv.channelType ||
-      conv.channel ||
-      conv.type ||
-      conv.provider ||
-      "";
+  const getSnippet = (item) => {
+    const text = item.lastMessageBody || "";
+    if (text) return text;
+    if (item.type) return item.type;
+    return "";
+  };
+
+  const getChannel = (item) => {
+    const ch = item.channel || item.type || "";
     if (!ch) return "";
-    const u = ch.toString().toUpperCase();
-    if (u.includes("WHATSAPP")) return "WhatsApp";
-    if (u.includes("SMS")) return "SMS";
-    if (u.includes("IG") || u.includes("INSTAGRAM")) return "Instagram";
-    if (u.includes("FB") || u.includes("FACEBOOK")) return "Facebook";
-    return ch;
+    return String(ch).toUpperCase();
   };
 
-  const getUnread = (conv) =>
-    conv.unreadCount ?? conv.unread ?? conv.unreadMessages ?? 0;
+  /* =========================
+   *  PANEL STATE
+   * ========================= */
 
-  /* ======================================
-   *  PANEL + INTERFAZ
-   * ====================================== */
-
-  let panelState = {
-    panel: null,
-    listEl: null,
-    searchInput: null,
-    statusEl: null,
-    conversations: [],
-    filtered: [],
-    refreshTimer: null,
+  const state = {
+    open: false,
+    autoRefreshTimer: null,
+    currentSearchTerm: "",
+    lastRequestId: 0,
+    dom: {},
   };
 
-  const openFloatForContact = (contactId) => {
-    if (window.__GHL_OPEN_FLOAT_FOR_CONTACT__) {
-      window.__GHL_OPEN_FLOAT_FOR_CONTACT__(contactId);
-      return;
+  const stopAutoRefresh = () => {
+    if (state.autoRefreshTimer) {
+      clearInterval(state.autoRefreshTimer);
+      state.autoRefreshTimer = null;
     }
-    // Fallback via evento custom
-    window.dispatchEvent(
-      new CustomEvent("ghl:open-floating-conversation", {
-        detail: { contactId },
-      })
-    );
   };
 
-  const renderList = () => {
-    const { listEl, filtered } = panelState;
-    if (!listEl) return;
-    listEl.innerHTML = "";
+  const startAutoRefresh = () => {
+    stopAutoRefresh();
+    if (!REFRESH_INTERVAL_MS || REFRESH_INTERVAL_MS <= 0) return;
+    state.autoRefreshTimer = setInterval(() => {
+      if (!state.open) return;
+      loadConversations(false);
+    }, REFRESH_INTERVAL_MS);
+  };
 
-    if (!filtered.length) {
+  /* =========================
+   *  RENDER
+   * ========================= */
+
+  const renderList = (items) => {
+    const list = state.dom.list;
+    list.innerHTML = "";
+
+    if (!items || !items.length) {
       const empty = document.createElement("div");
-      empty.className = "ghl-convlist-empty";
-      empty.textContent = "No hay conversaciones para mostrar.";
-      listEl.appendChild(empty);
+      empty.className = "ghl-conv-empty";
+      empty.textContent = "No se encontraron conversaciones.";
+      list.appendChild(empty);
       return;
     }
 
-    filtered.forEach((conv) => {
-      const item = document.createElement("div");
-      item.className = "ghl-convlist-item";
-
-      const name = getName(conv);
-      const initials = getInitials(name);
-      const time = formatTime(
-        conv.lastMessageDate ||
-          conv.lastMessageDateTime ||
-          conv.last_message_date ||
-          conv.updatedAt ||
-          conv.dateUpdated
-      );
-      const preview = getPreview(conv);
-      const channelLabel = getChannelLabel(conv);
-      const unread = getUnread(conv);
+    items.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "ghl-conv-row";
 
       const avatar = document.createElement("div");
-      avatar.className = "ghl-convlist-avatar";
-      avatar.textContent = initials;
+      avatar.className = "ghl-conv-avatar";
+      avatar.textContent = getInitials(item);
 
       const main = document.createElement("div");
-      main.className = "ghl-convlist-main";
+      main.className = "ghl-conv-main";
 
-      const row1 = document.createElement("div");
-      row1.className = "ghl-convlist-row1";
+      const top = document.createElement("div");
+      top.className = "ghl-conv-top";
 
       const nameEl = document.createElement("div");
-      nameEl.className = "ghl-convlist-name";
+      nameEl.className = "ghl-conv-name";
+      const name = getName(item);
       nameEl.textContent = name;
       nameEl.title = name;
 
       const timeEl = document.createElement("div");
-      timeEl.className = "ghl-convlist-time";
-      timeEl.textContent = time;
+      timeEl.className = "ghl-conv-time";
+      timeEl.textContent = formatTime(item.lastMessageDate);
 
-      row1.appendChild(nameEl);
-      row1.appendChild(timeEl);
+      top.appendChild(nameEl);
+      top.appendChild(timeEl);
 
-      const row2 = document.createElement("div");
-      row2.className = "ghl-convlist-row2";
+      const bottom = document.createElement("div");
+      bottom.className = "ghl-conv-bottom";
 
-      if (channelLabel) {
-        const chEl = document.createElement("div");
-        chEl.className = "ghl-convlist-channel";
-        chEl.textContent = channelLabel;
-        row2.appendChild(chEl);
-      }
+      const chEl = document.createElement("div");
+      chEl.className = "ghl-conv-channel";
+      chEl.textContent = getChannel(item);
 
-      const previewEl = document.createElement("div");
-      previewEl.className = "ghl-convlist-preview";
-      previewEl.textContent = preview;
-      row2.appendChild(previewEl);
+      const snip = document.createElement("div");
+      snip.className = "ghl-conv-snippet";
+      snip.textContent = getSnippet(item);
 
+      bottom.appendChild(chEl);
+      bottom.appendChild(snip);
+
+      // badge de no leídos (si viene)
+      const unread = (item.unreadCount || item.unread_count || 0) | 0;
       if (unread > 0) {
-        const badge = document.createElement("span");
-        badge.className = "ghl-convlist-unread";
+        const badge = document.createElement("div");
+        badge.className = "ghl-conv-unread";
         badge.textContent = unread > 9 ? "9+" : String(unread);
-        row2.appendChild(badge);
+        bottom.appendChild(badge);
       }
 
-      main.appendChild(row1);
-      main.appendChild(row2);
+      main.appendChild(top);
+      main.appendChild(bottom);
 
-      item.appendChild(avatar);
-      item.appendChild(main);
+      row.appendChild(avatar);
+      row.appendChild(main);
 
-      item.addEventListener("click", () => {
+      row.addEventListener("click", () => {
         const contactId =
-          conv.contactId || conv.contact?.id || conv.contact_id;
-        if (!contactId) return;
-        openFloatForContact(contactId);
+          item.contactId ||
+          item.contact?.id ||
+          item.contact?.contactId ||
+          null;
+        const locId = getLocationId();
+        const convId = item.id;
+
+        if (window.ghlOpenFloatingConversation && contactId) {
+          // usamos la ventana flotante que ya construiste
+          window.ghlOpenFloatingConversation(contactId);
+        } else if (locId && convId) {
+          const url = `https://app.gohighlevel.com/v2/location/${locId}/conversations/conversations/${convId}?category=team-inbox&tab=all`;
+          window.open(url, "_blank");
+        }
       });
 
-      listEl.appendChild(item);
+      list.appendChild(row);
     });
   };
 
-  const applyFilter = () => {
-    const q = (panelState.searchInput?.value || "").trim().toLowerCase();
-    if (!q) {
-      panelState.filtered = panelState.conversations.slice();
-    } else {
-      panelState.filtered = panelState.conversations.filter((c) => {
-        const name = getName(c).toLowerCase();
-        const preview = getPreview(c).toLowerCase();
-        return name.includes(q) || preview.includes(q);
-      });
-    }
-    renderList();
+  const setMeta = (count) => {
+    if (!state.dom.meta) return;
+    const term = state.currentSearchTerm?.trim();
+    const label = term
+      ? `Resultados: ${count} conversación(es) para “${term}”`
+      : `Total: ${count} conversaciones cargadas`;
+    state.dom.meta.textContent = label;
   };
 
-  const reloadConversations = async () => {
-    if (!panelState.panel || panelState.panel.classList.contains("ghl-hidden"))
+  /* =========================
+   *  LOAD
+   * ========================= */
+
+  const loadConversations = async (showSpinner = true) => {
+    const locId = getLocationId();
+    const token = getToken();
+    if (!locId || !token) {
+      console.warn("Sin locationId o token configurado para conversaciones.");
       return;
+    }
+
+    const reqId = ++state.lastRequestId;
+
+    if (showSpinner && state.dom.status) {
+      state.dom.status.textContent = "Actualizando conversaciones...";
+    }
+
     try {
-      panelState.statusEl.textContent = "Actualizando conversaciones…";
-      const resp = await fetchConversations();
-      const list =
-        resp?.conversations || resp?.items || resp?.data || resp || [];
-      // Por si algo viene desordenado:
-      list.sort((a, b) => {
-        const da = new Date(
-          a.lastMessageDate ||
-            a.lastMessageDateTime ||
-            a.updatedAt ||
-            a.dateUpdated ||
-            0
-        ).getTime();
-        const db = new Date(
-          b.lastMessageDate ||
-            b.lastMessageDateTime ||
-            b.updatedAt ||
-            b.dateUpdated ||
-            0
-        ).getTime();
-        return db - da;
-      });
-      panelState.conversations = list;
-      applyFilter();
-      panelState.statusEl.textContent = `Total: ${list.length} conversaciones cargadas`;
+      const data = await fetchConversations(
+        locId,
+        token,
+        state.currentSearchTerm
+      );
+      // si llegó una respuesta vieja, la ignoramos
+      if (reqId !== state.lastRequestId) return;
+
+      const items =
+        data?.conversations ||
+        data?.items ||
+        data?.records ||
+        data?.data ||
+        [];
+      renderList(items, true);
+      setMeta(items.length);
+      if (state.dom.status) state.dom.status.textContent = "";
     } catch (e) {
       console.error("Error cargando conversaciones", e);
-      panelState.statusEl.textContent =
-        "Error al cargar conversaciones. Revisa el token o conexión.";
+      if (state.dom.status) {
+        state.dom.status.textContent =
+          "Error al cargar conversaciones. Reintenta más tarde.";
+      }
     }
   };
 
-  const setupDrag = (panel, handle) => {
-    let dragging = false;
-    let offsetX = 0;
-    let offsetY = 0;
+  /* =========================
+   *  PANEL UI
+   * ========================= */
 
-    const onDown = (e) => {
-      if (e.button !== 0) return;
-      dragging = true;
-      const rect = panel.getBoundingClientRect();
-      offsetX = e.clientX - rect.left;
-      offsetY = e.clientY - rect.top;
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
-    };
+  const openPanel = () => {
+    ensureStyles();
+    if (state.open) return;
 
-    const onMove = (e) => {
-      if (!dragging) return;
-      const x = e.clientX - offsetX;
-      const y = e.clientY - offsetY;
-      const maxX = window.innerWidth - 80;
-      const maxY = window.innerHeight - 80;
-      panel.style.left = Math.max(10, Math.min(maxX, x)) + "px";
-      panel.style.top = Math.max(10, Math.min(maxY, y)) + "px";
-      panel.style.right = "auto"; // para que no pelee con right fijo
-    };
-
-    const onUp = () => {
-      dragging = false;
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    };
-
-    handle.addEventListener("mousedown", onDown);
-  };
-
-  const createPanel = () => {
-    if (panelState.panel) return panelState.panel;
-
-    ensureStyle();
+    let backdrop = document.getElementById("ghl-conv-panel-backdrop");
+    if (!backdrop) {
+      backdrop = document.createElement("div");
+      backdrop.id = "ghl-conv-panel-backdrop";
+      document.body.appendChild(backdrop);
+    }
 
     const panel = document.createElement("div");
-    panel.id = PANEL_ID;
-    panel.className = "ghl-hidden";
+    panel.id = "ghl-conv-panel";
 
-    // Header
+    // header
     const header = document.createElement("div");
-    header.className = "ghl-convlist-header";
+    header.id = "ghl-conv-panel-header";
 
-    const title = document.createElement("div");
-    title.className = "ghl-convlist-title";
+    const title = document.createElement("h3");
     title.textContent = "Conversaciones";
 
-    const headerRight = document.createElement("div");
-    headerRight.className = "ghl-convlist-header-right";
+    const hRight = document.createElement("div");
+    hRight.id = "ghl-conv-panel-header-right";
 
-    // botón refrescar inmediato
     const btnRefresh = document.createElement("button");
     btnRefresh.type = "button";
-    btnRefresh.className = "ghl-convlist-icon-btn";
+    btnRefresh.className = "ghl-conv-icon-btn";
     btnRefresh.title = "Actualizar ahora";
     btnRefresh.innerHTML = `
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="23 4 23 10 17 10"></polyline>
         <polyline points="1 20 1 14 7 14"></polyline>
-        <path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10"></path>
-        <path d="M20.49 15a9 9 0 0 1-14.13 3.36L1 14"></path>
+        <path d="M3.51 9a9 9 0 0 1 14.88-3.36L23 10"></path>
+        <path d="M1 14l4.62 4.36A9 9 0 0 0 20.49 15"></path>
       </svg>`;
-    btnRefresh.onclick = () => reloadConversations();
+    btnRefresh.onclick = () => loadConversations(true);
 
-    // botón cerrar
     const btnClose = document.createElement("button");
     btnClose.type = "button";
-    btnClose.className = "ghl-convlist-icon-btn";
-    btnClose.title = "Cerrar";
-    btnClose.innerHTML = `
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="18" y1="6" x2="6" y2="18"></line>
-        <line x1="6" y1="6" x2="18" y2="18"></line>
-      </svg>`;
-    btnClose.onclick = () => {
-      panel.classList.add("ghl-hidden");
-    };
+    btnClose.id = "ghl-conv-panel-close";
+    btnClose.textContent = "Cerrar";
+    btnClose.onclick = () => closePanel();
 
-    headerRight.appendChild(btnRefresh);
-    headerRight.appendChild(btnClose);
+    hRight.appendChild(btnRefresh);
+    hRight.appendChild(btnClose);
 
     header.appendChild(title);
-    header.appendChild(headerRight);
+    header.appendChild(hRight);
 
-    // Body
-    const body = document.createElement("div");
-    body.className = "ghl-convlist-body";
-
+    // buscador
     const searchWrap = document.createElement("div");
-    searchWrap.className = "ghl-convlist-search";
+    searchWrap.id = "ghl-conv-search-wrap";
+    const search = document.createElement("input");
+    search.id = "ghl-conv-search";
+    search.type = "text";
+    search.placeholder = "Buscar por nombre o mensaje…";
+    search.autocomplete = "off";
+    searchWrap.appendChild(search);
 
-    const searchInput = document.createElement("input");
-    searchInput.type = "text";
-    searchInput.placeholder = "Buscar por nombre o mensaje...";
-    searchInput.addEventListener("input", () => applyFilter());
-    searchWrap.appendChild(searchInput);
+    const meta = document.createElement("div");
+    meta.id = "ghl-conv-meta";
 
-    const statusEl = document.createElement("div");
-    statusEl.className = "ghl-convlist-status";
-    statusEl.textContent = `Actualización cada ${REFRESH_MS / 1000}s`;
+    const list = document.createElement("div");
+    list.id = "ghl-conv-list";
 
-    const listEl = document.createElement("div");
-    listEl.className = "ghl-convlist-list";
-
-    body.appendChild(searchWrap);
-    body.appendChild(statusEl);
-    body.appendChild(listEl);
+    const status = document.createElement("div");
+    status.id = "ghl-conv-status";
 
     panel.appendChild(header);
-    panel.appendChild(body);
+    panel.appendChild(searchWrap);
+    panel.appendChild(meta);
+    panel.appendChild(list);
+    panel.appendChild(status);
 
-    document.body.appendChild(panel);
+    backdrop.appendChild(panel);
 
-    panelState.panel = panel;
-    panelState.listEl = listEl;
-    panelState.searchInput = searchInput;
-    panelState.statusEl = statusEl;
+    state.open = true;
+    state.dom = { panel, list, meta, status, search };
 
-    // Drag
-    setupDrag(panel, header);
+    // mover un poco si ya hay scroll
+    panel.style.top = window.scrollY + 80 + "px";
 
-    // Auto-refresh
-    if (REFRESH_MS > 0) {
-      panelState.refreshTimer = setInterval(() => {
-        reloadConversations();
-      }, REFRESH_MS);
-    }
+    // eventos del buscador -> API, no solo local
+    const debounce = (fn, ms) => {
+      let t;
+      return (...args) => {
+        clearTimeout(t);
+        t = setTimeout(() => fn(...args), ms);
+      };
+    };
 
-    return panel;
+    const onSearch = debounce(() => {
+      state.currentSearchTerm = search.value || "";
+      loadConversations(true);
+    }, 400);
+
+    search.addEventListener("input", onSearch);
+
+    // primera carga
+    loadConversations(true);
+    startAutoRefresh();
   };
 
-  const togglePanel = () => {
-    if (!LOCATION_ID || !TOKEN) {
-      alert("Falta locationId o token para cargar las conversaciones.");
-      return;
-    }
-    const panel = createPanel();
-    const isHidden = panel.classList.contains("ghl-hidden");
-    if (isHidden) {
-      panel.classList.remove("ghl-hidden");
-      reloadConversations();
-    } else {
-      panel.classList.add("ghl-hidden");
-    }
+  const closePanel = () => {
+    stopAutoRefresh();
+    state.open = false;
+    state.lastRequestId++;
+    const panel = document.getElementById("ghl-conv-panel");
+    if (panel) panel.remove();
   };
 
-  /* ======================================
-   *  BOTÓN EN LA BARRA DE VISTAS
-   * ====================================== */
+  /* =========================
+   *  BOTÓN EN VISTA
+   * ========================= */
 
-  const createToggleBtn = () => {
-    ensureStyle();
-    if (document.getElementById(TOGGLE_BTN_ID)) return;
-
-    const views = document.querySelector("div.d-flex.views");
-    if (!views) return;
-
-    const btn = document.createElement("span");
-    btn.id = TOGGLE_BTN_ID;
-    btn.title = "Ver lista de conversaciones (flotante)";
-    btn.innerHTML = `
+  const makeToggleButton = () => {
+    const span = document.createElement("span");
+    span.className = BTN_CLASS;
+    span.title = "Ver conversaciones recientes";
+    span.innerHTML = `
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-      </svg>
-    `;
-    btn.addEventListener("click", togglePanel);
+        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+      </svg>`;
+    span.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (state.open) {
+        closePanel();
+      } else {
+        openPanel();
+      }
+    });
+    return span;
+  };
 
+  const injectButton = () => {
+    ensureStyles();
+    // Buscamos el contenedor de vistas (kanban / list)
+    const views = document.querySelector("div.views") ||
+                  document.querySelector("div.d-flex.views");
+    if (!views) return;
+    if (views.querySelector("." + BTN_CLASS)) return;
+    const btn = makeToggleButton();
     views.appendChild(btn);
   };
 
-  const debounce = (fn, ms = 150) => {
+  const debounce = (fn, ms = 200) => {
     let t;
     return (...args) => {
       clearTimeout(t);
@@ -713,18 +680,26 @@
     };
   };
 
-  const handle = debounce(() => {
-    if (!LOCATION_ID || !TOKEN) return;
-    createToggleBtn();
-  }, 200);
-
+  const handle = debounce(injectButton, 200);
   const observer = new MutationObserver(handle);
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree: true,
-  });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
 
-  window.addEventListener("load", handle);
+  ["pushState", "replaceState"].forEach((fn) => {
+    try {
+      const orig = history[fn];
+      history[fn] = function () {
+        const ret = orig.apply(this, arguments);
+        window.dispatchEvent(new Event("ghl:navigation"));
+        return ret;
+      };
+    } catch {}
+  });
+  window.addEventListener("popstate", () =>
+    window.dispatchEvent(new Event("ghl:navigation"))
+  );
+  window.addEventListener("ghl:navigation", handle);
+
+  handle();
   setTimeout(handle, 500);
   setTimeout(handle, 1000);
 })();
