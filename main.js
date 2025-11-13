@@ -286,17 +286,14 @@
       xhr.send(null);
     });
 
-  const fetchConversations = (locId, token, searchTerm) => {
+  const fetchConversations = (locId, token, limit) => {
     const params = [
       "locationId=" + encodeURIComponent(locId),
-      "limit=" + PAGE_LIMIT,
+      "limit=" + (limit || PAGE_LIMIT),
       "status=all",
       "sort=desc",
       "sortBy=last_message_date",
     ];
-    if (searchTerm && searchTerm.trim()) {
-      params.push("searchTerm=" + encodeURIComponent(searchTerm.trim()));
-    }
     const path = "/conversations/search?" + params.join("&");
     return apiFetch("GET", path, token);
   };
@@ -370,6 +367,8 @@ const getName = (item) => {
     autoRefreshTimer: null,
     currentSearchTerm: "",
     lastRequestId: 0,
+    currentLimit: PAGE_LIMIT,  // <<< nuevo
+    total: null,               // <<< nuevo
     dom: {},
   };
 
@@ -392,6 +391,28 @@ const getName = (item) => {
   /* =========================
    *  RENDER
    * ========================= */
+
+  const filterBySearch = (items) => {
+  const term = (state.currentSearchTerm || "").trim().toLowerCase();
+  if (!term) return items;
+
+  return items.filter((item) => {
+    const name    = (getName(item) || "").toLowerCase();
+    const snippet = (getSnippet(item) || "").toLowerCase();
+    const phone   = (
+      item.phone ||
+      item.phoneNumber ||
+      item.contact?.phone ||
+      ""
+    ).toString().toLowerCase();
+
+    return (
+      name.includes(term) ||
+      snippet.includes(term) ||
+      phone.includes(term)
+    );
+  });
+};
 
   const renderList = (items) => {
     const list = state.dom.list;
@@ -483,20 +504,41 @@ const getName = (item) => {
     });
   };
 
-  const setMeta = (count) => {
+    const setMeta = (shownCount, total) => {
     if (!state.dom.meta) return;
     const term = state.currentSearchTerm?.trim();
+    const totalSafe = total ?? shownCount;
     const label = term
-      ? `Resultados: ${count} conversación(es) para “${term}”`
-      : `Total: ${count} conversaciones cargadas`;
+      ? `Resultados: ${shownCount} conversación(es) (de ${totalSafe}) para “${term}”`
+      : `Mostrando ${shownCount} de ${totalSafe} conversaciones`;
     state.dom.meta.textContent = label;
   };
 
+  const updateLoadMoreButton = (fetchedCount, total) => {
+    const btn = state.dom.loadMore;
+    if (!btn) return;
+
+    // fetchedCount = cuántas conversaciones nos devolvió el API (sin filtro)
+    // total = total reportado por la API
+    const t = total ?? fetchedCount;
+
+    if (fetchedCount >= t) {
+      // Ya cargamos todas
+      btn.style.display = "none";
+      btn.disabled = false;
+      btn.textContent = "Cargar más conversaciones";
+      return;
+    }
+
+    btn.style.display = "block";
+    btn.disabled = false;
+    btn.textContent = "Cargar más conversaciones";
+  };
   /* =========================
    *  LOAD
    * ========================= */
 
-  const loadConversations = async (showSpinner = true) => {
+const loadConversations = async (showSpinner = true) => {
     const locId = getLocationId();
     const token = getToken();
     if (!locId || !token) {
@@ -514,19 +556,30 @@ const getName = (item) => {
       const data = await fetchConversations(
         locId,
         token,
-        state.currentSearchTerm
+        state.currentLimit || PAGE_LIMIT   // <<< usamos el límite actual
       );
-      // si llegó una respuesta vieja, la ignoramos
       if (reqId !== state.lastRequestId) return;
 
-      const items =
+      const rawItems =
         data?.conversations ||
         data?.items ||
         data?.records ||
         data?.data ||
         [];
-      renderList(items, true);
-      setMeta(items.length);
+
+      const items = filterBySearch(rawItems);   // <<< filtro por nombre / texto
+
+      const total =
+        data?.total ||
+        data?.totalCount ||
+        rawItems.length;
+
+      state.total = total;
+
+      renderList(items);
+      setMeta(items.length, total);            // <<< le pasamos total
+      updateLoadMoreButton(rawItems.length, total); // <<< ver punto 3
+
       if (state.dom.status) state.dom.status.textContent = "";
     } catch (e) {
       console.error("Error cargando conversaciones", e);
@@ -615,7 +668,7 @@ const getName = (item) => {
     panel.appendChild(meta);
     panel.appendChild(list);
     panel.appendChild(status);
-
+    panel.appendChild(loadMore);   // <<< lo añadimos al panel
     backdrop.appendChild(panel);
 
     state.open = true;
@@ -635,6 +688,8 @@ const getName = (item) => {
 
     const onSearch = debounce(() => {
       state.currentSearchTerm = search.value || "";
+      // reseteamos el límite al buscar, para empezar de nuevo desde las más recientes
+      state.currentLimit = PAGE_LIMIT;
       loadConversations(true);
     }, 400);
 
