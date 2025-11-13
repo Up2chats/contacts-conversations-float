@@ -286,17 +286,22 @@
       xhr.send(null);
     });
 
-  const fetchConversations = (locId, token, limit) => {
-    const params = [
-      "locationId=" + encodeURIComponent(locId),
-      "limit=" + (limit || PAGE_LIMIT),
-      "status=all",
-      "sort=desc",
-      "sortBy=last_message_date",
-    ];
-    const path = "/conversations/search?" + params.join("&");
-    return apiFetch("GET", path, token);
-  };
+  const fetchConversations = (locId, token, limit, searchTerm) => {
+  const params = [
+    "locationId=" + encodeURIComponent(locId),
+    "limit=" + (limit || PAGE_LIMIT),
+    "status=all",
+    "sort=desc",
+    "sortBy=last_message_date",
+  ];
+
+  if (searchTerm && searchTerm.trim()) {
+    params.push("searchTerm=" + encodeURIComponent(searchTerm.trim()));
+  }
+
+  const path = "/conversations/search?" + params.join("&");
+  return apiFetch("GET", path, token);
+};
 
   const formatTime = (iso) => {
     if (!iso) return "";
@@ -556,7 +561,8 @@ const loadConversations = async (showSpinner = true) => {
       const data = await fetchConversations(
         locId,
         token,
-        state.currentLimit || PAGE_LIMIT   // <<< usamos el límite actual
+        state.currentLimit || PAGE_LIMIT,   // <<< antes solo limit
+        state.currentSearchTerm            // <<< mandamos también el término
       );
       if (reqId !== state.lastRequestId) return;
 
@@ -595,110 +601,134 @@ const loadConversations = async (showSpinner = true) => {
    * ========================= */
 
   const openPanel = () => {
-    ensureStyles();
-    if (state.open) return;
+  ensureStyles();
+  if (state.open) return;
 
-    let backdrop = document.getElementById("ghl-conv-panel-backdrop");
-    if (!backdrop) {
-      backdrop = document.createElement("div");
-      backdrop.id = "ghl-conv-panel-backdrop";
-      document.body.appendChild(backdrop);
-    }
+  let backdrop = document.getElementById("ghl-conv-panel-backdrop");
+  if (!backdrop) {
+    backdrop = document.createElement("div");
+    backdrop.id = "ghl-conv-panel-backdrop";
+    document.body.appendChild(backdrop);
+  }
 
-    const panel = document.createElement("div");
-    panel.id = "ghl-conv-panel";
+  const panel = document.createElement("div");
+  panel.id = "ghl-conv-panel";
 
-    // header
-    const header = document.createElement("div");
-    header.id = "ghl-conv-panel-header";
+  // ===== header =====
+  const header = document.createElement("div");
+  header.id = "ghl-conv-panel-header";
 
-    const title = document.createElement("h3");
-    title.textContent = "Conversaciones";
+  const title = document.createElement("h3");
+  title.textContent = "Conversaciones";
 
-    const hRight = document.createElement("div");
-    hRight.id = "ghl-conv-panel-header-right";
+  const hRight = document.createElement("div");
+  hRight.id = "ghl-conv-panel-header-right";
 
-    const btnRefresh = document.createElement("button");
-    btnRefresh.type = "button";
-    btnRefresh.className = "ghl-conv-icon-btn";
-    btnRefresh.title = "Actualizar ahora";
-    btnRefresh.innerHTML = `
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="23 4 23 10 17 10"></polyline>
-        <polyline points="1 20 1 14 7 14"></polyline>
-        <path d="M3.51 9a9 9 0 0 1 14.88-3.36L23 10"></path>
-        <path d="M1 14l4.62 4.36A9 9 0 0 0 20.49 15"></path>
-      </svg>`;
-    btnRefresh.onclick = () => loadConversations(true);
+  const btnRefresh = document.createElement("button");
+  btnRefresh.type = "button";
+  btnRefresh.className = "ghl-conv-icon-btn";
+  btnRefresh.title = "Actualizar ahora";
+  btnRefresh.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="23 4 23 10 17 10"></polyline>
+      <polyline points="1 20 1 14 7 14"></polyline>
+      <path d="M3.51 9a9 9 0 0 1 14.88-3.36L23 10"></path>
+      <path d="M1 14l4.62 4.36A9 9 0 0 0 20.49 15"></path>
+    </svg>`;
+  btnRefresh.onclick = () => loadConversations(true);
 
-    const btnClose = document.createElement("button");
-    btnClose.type = "button";
-    btnClose.id = "ghl-conv-panel-close";
-    btnClose.textContent = "Cerrar";
-    btnClose.onclick = () => closePanel();
+  const btnClose = document.createElement("button");
+  btnClose.type = "button";
+  btnClose.id = "ghl-conv-panel-close";
+  btnClose.textContent = "Cerrar";
+  btnClose.onclick = () => closePanel();
 
-    hRight.appendChild(btnRefresh);
-    hRight.appendChild(btnClose);
+  hRight.appendChild(btnRefresh);
+  hRight.appendChild(btnClose);
 
-    header.appendChild(title);
-    header.appendChild(hRight);
+  header.appendChild(title);
+  header.appendChild(hRight);
 
-    // buscador
-    const searchWrap = document.createElement("div");
-    searchWrap.id = "ghl-conv-search-wrap";
-    const search = document.createElement("input");
-    search.id = "ghl-conv-search";
-    search.type = "text";
-    search.placeholder = "Buscar por nombre o mensaje…";
-    search.autocomplete = "off";
-    searchWrap.appendChild(search);
+  // ===== buscador =====
+  const searchWrap = document.createElement("div");
+  searchWrap.id = "ghl-conv-search-wrap";
 
-    const meta = document.createElement("div");
-    meta.id = "ghl-conv-meta";
+  const search = document.createElement("input");
+  search.id = "ghl-conv-search";
+  search.type = "text";
+  search.placeholder = "Buscar por nombre o mensaje…";
+  search.autocomplete = "off";
 
-    const list = document.createElement("div");
-    list.id = "ghl-conv-list";
+  searchWrap.appendChild(search);
 
-    const status = document.createElement("div");
-    status.id = "ghl-conv-status";
+  // meta / lista / status
+  const meta = document.createElement("div");
+  meta.id = "ghl-conv-meta";
 
-    panel.appendChild(header);
-    panel.appendChild(searchWrap);
-    panel.appendChild(meta);
-    panel.appendChild(list);
-    panel.appendChild(status);
-    panel.appendChild(loadMore);   // <<< lo añadimos al panel
-    backdrop.appendChild(panel);
+  const list = document.createElement("div");
+  list.id = "ghl-conv-list";
 
-    state.open = true;
-    state.dom = { panel, list, meta, status, search };
+  const status = document.createElement("div");
+  status.id = "ghl-conv-status";
 
-    // mover un poco si ya hay scroll
-    panel.style.top = window.scrollY + 80 + "px";
-
-    // eventos del buscador -> API, no solo local
-    const debounce = (fn, ms) => {
-      let t;
-      return (...args) => {
-        clearTimeout(t);
-        t = setTimeout(() => fn(...args), ms);
-      };
-    };
-
-    const onSearch = debounce(() => {
-      state.currentSearchTerm = search.value || "";
-      // reseteamos el límite al buscar, para empezar de nuevo desde las más recientes
-      state.currentLimit = PAGE_LIMIT;
-      loadConversations(true);
-    }, 400);
-
-    search.addEventListener("input", onSearch);
-
-    // primera carga
+  // ===== botón Cargar más =====
+  const loadMore = document.createElement("button");
+  loadMore.id = "ghl-conv-load-more";
+  loadMore.textContent = "Cargar más conversaciones";
+  loadMore.style.display = "none"; // se muestra solo cuando haga falta
+  loadMore.style.margin = "0 16px 10px 16px";
+  loadMore.style.padding = "6px 12px";
+  loadMore.style.fontSize = "12px";
+  loadMore.style.borderRadius = "999px";
+  loadMore.style.border = "1px solid #e5e7eb";
+  loadMore.style.background = "#f9fafb";
+  loadMore.onclick = () => {
+    loadMore.disabled = true;
+    loadMore.textContent = "Cargando...";
+    state.currentLimit = (state.currentLimit || PAGE_LIMIT) + PAGE_LIMIT;
     loadConversations(true);
-    startAutoRefresh();
   };
+
+  // montar todo en el panel
+  panel.appendChild(header);
+  panel.appendChild(searchWrap);
+  panel.appendChild(meta);
+  panel.appendChild(list);
+  panel.appendChild(status);
+  panel.appendChild(loadMore);
+
+  backdrop.appendChild(panel);
+
+  state.open = true;
+  // 👇 importante incluir loadMore aquí
+  state.dom = { panel, list, meta, status, search, loadMore };
+
+  // mover un poco si ya hay scroll
+  panel.style.top = window.scrollY + 80 + "px";
+
+  // ===== lógica de búsqueda =====
+  const debounce = (fn, ms) => {
+    let t;
+    return (...args) => {
+      clearTimeout(t);
+      t = setTimeout(() => fn(...args), ms);
+    };
+  };
+
+  const onSearch = debounce(() => {
+    state.currentSearchTerm = search.value || "";
+    // reseteamos el límite al buscar, para empezar de nuevo desde las más recientes
+    state.currentLimit = PAGE_LIMIT;
+    loadConversations(true);
+  }, 400);
+
+  search.addEventListener("input", onSearch);
+
+  // primera carga
+  loadConversations(true);
+  startAutoRefresh();
+};
 
   const closePanel = () => {
     stopAutoRefresh();
