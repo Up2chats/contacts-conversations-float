@@ -722,6 +722,7 @@ const loadConversations = async (showSpinner = true) => {
 
     // buscador
         // buscador
+    // buscador
     const searchWrap = document.createElement("div");
     searchWrap.id = "ghl-conv-search-wrap";
 
@@ -731,7 +732,37 @@ const loadConversations = async (showSpinner = true) => {
     search.placeholder = "Buscar por nombre o mensaje…";
     search.autocomplete = "off";
     searchWrap.appendChild(search);
-    ...
+
+    const meta = document.createElement("div");
+    meta.id = "ghl-conv-meta";
+
+    const list = document.createElement("div");
+    list.id = "ghl-conv-list";
+
+    const status = document.createElement("div");
+    status.id = "ghl-conv-status";
+
+    const loadMore = document.createElement("button");
+    loadMore.id = "ghl-conv-load-more";
+    loadMore.textContent = "Cargar más conversaciones";
+    loadMore.style.display = "none";
+    loadMore.onclick = () => {
+      loadMore.disabled = true;
+      loadMore.textContent = "Cargando...";
+      state.currentLimit = (state.currentLimit || PAGE_LIMIT) + PAGE_LIMIT;
+      loadConversations(true);
+    };
+
+    panel.appendChild(header);
+    panel.appendChild(searchWrap);
+    panel.appendChild(meta);
+    panel.appendChild(list);
+    panel.appendChild(status);
+    panel.appendChild(loadMore);
+
+    backdrop.appendChild(panel);
+
+    state.open = true;
     state.dom = { panel, list, meta, status, search, loadMore };
 
     // === BÚSQUEDA (con debounce suave para no spamear el API) ===
@@ -755,8 +786,8 @@ const loadConversations = async (showSpinner = true) => {
     // primera carga
     loadConversations(true);
     startAutoRefresh();
-  };
 
+    
   const closePanel = () => {
     stopAutoRefresh();
     state.open = false;
