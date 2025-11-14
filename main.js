@@ -1,8 +1,8 @@
 (() => {
   "use strict";
-  if (window.__GHL_CONVERSATIONS_FLOAT__) return;
-  window.__GHL_CONVERSATIONS_FLOAT__ = true;
-  console.log("[CONV-FLOAT] Script v2 cargado");
+if (window.__GHL_CONVERSATIONS_FLOAT_V2__) return;
+window.__GHL_CONVERSATIONS_FLOAT_V2__ = true;
+console.log("[CONV-FLOAT] Script v2 cargado");
   /* =========================
    *  CONFIG
    * ========================= */
