@@ -7,7 +7,7 @@
    *  CONFIG
    * ========================= */
 
-  const REFRESH_INTERVAL_MS = 10000; // auto refresh cada 10s
+  const REFRESH_INTERVAL_MS = 10000; // ⏱ auto refresh cada 10s
   const PAGE_LIMIT = 20;
 
   const API_BASE = "https://services.leadconnectorhq.com";
@@ -20,12 +20,10 @@
     (location.pathname.match(/\/location\/([^/]+)/) || [])[1] || null;
 
   // leemos data-* del script
-  const currentScript =
-    document.currentScript ||
-    (function () {
-      const scripts = document.getElementsByTagName("script");
-      return scripts[scripts.length - 1];
-    })();
+  const currentScript = document.currentScript || (function () {
+    const scripts = document.getElementsByTagName("script");
+    return scripts[scripts.length - 1];
+  })();
 
   const DATA_LOCATION_ID = currentScript?.dataset.locationId || null;
   const DATA_TOKEN = currentScript?.dataset.token || null;
@@ -43,24 +41,15 @@
     s.id = STYLE_ID;
     s.textContent = `
       .${BTN_CLASS}{
-        position:fixed;
-        bottom:24px;
-        right:24px;
-        width:42px;
-        height:42px;
-        border-radius:999px;
-        background:#ffffff;
-        border:1px solid #e5e7eb;
-        box-shadow:0 12px 30px rgba(15,23,42,0.28);
         display:inline-flex;
         align-items:center;
         justify-content:center;
+        margin-left:6px;
         cursor:pointer;
-        z-index:100001;
       }
       .${BTN_CLASS} svg{
-        width:20px;
-        height:20px;
+        width:18px;
+        height:18px;
         color:#4b5563;
       }
       .${BTN_CLASS}:hover svg{
@@ -88,7 +77,6 @@
         flex-direction:column;
         pointer-events:auto;
         overflow:hidden;
-        transition:transform 0.18s ease-out, opacity 0.18s ease-out;
       }
       #ghl-conv-panel-header{
         flex:0 0 auto;
@@ -98,8 +86,6 @@
         justify-content:space-between;
         border-bottom:1px solid #e5e7eb;
         gap:8px;
-        cursor:move;
-        user-select:none;
       }
       #ghl-conv-panel-header h3{
         margin:0;
@@ -266,18 +252,6 @@
         color:#6b7280;
         flex:0 0 auto;
       }
-      #ghl-conv-load-more{
-        margin:0 16px 10px 16px;
-        padding:6px 12px;
-        font-size:12px;
-        border-radius:999px;
-        border:1px solid #e5e7eb;
-        background:#f9fafb;
-        cursor:pointer;
-      }
-      #ghl-conv-load-more:hover{
-        background:#eef2ff;
-      }
     `;
     document.head.appendChild(s);
   };
@@ -312,37 +286,23 @@
       xhr.send(null);
     });
 
-  // OJO: aquí NO usamos searchTerm, solo limit.
+  const fetchConversations = (locId, token, searchTerm) => {
   const fetchConversations = (locId, token, limit) => {
     const params = [
       "locationId=" + encodeURIComponent(locId),
+      "limit=" + PAGE_LIMIT,
       "limit=" + (limit || PAGE_LIMIT),
       "status=all",
       "sort=desc",
       "sortBy=last_message_date",
     ];
+    if (searchTerm && searchTerm.trim()) {
+      params.push("searchTerm=" + encodeURIComponent(searchTerm.trim()));
+    }
     const path = "/conversations/search?" + params.join("&");
     return apiFetch("GET", path, token);
   };
 
-const fetchConversations = (locId, token, { limit, searchTerm } = {}) => {
-  const params = [
-    "locationId=" + encodeURIComponent(locId),
-    "limit=" + (limit || PAGE_LIMIT),
-    "status=all",
-    "sort=desc",
-    "sortBy=last_message_date",
-  ];
-
-  if (searchTerm && searchTerm.trim()) {
-    params.push("searchTerm=" + encodeURIComponent(searchTerm.trim()));
-  }
-
-  const path = "/conversations/search?" + params.join("&");
-  return apiFetch("GET", path, token);
-};
-
-  
   const formatTime = (iso) => {
     if (!iso) return "";
     const d = new Date(iso);
@@ -353,32 +313,42 @@ const fetchConversations = (locId, token, { limit, searchTerm } = {}) => {
     });
   };
 
-  const getName = (item) => {
-    const c = item.contact || {};
-    const first = c.firstName || c.first_name || "";
-    const last = c.lastName || c.last_name || "";
+const getInitials = (item) => {
+  const name = getName(item); // reutilizamos la función de arriba
+  const parts = name.split(/\s+/).filter(Boolean);
 
-    let name = `${first} ${last}`.trim();
+  if (!parts.length) return "CT";
 
-    if (!name) {
-      name =
-        c.fullName ||
-        c.full_name ||
-        item.contactName ||
-        item.contact_name ||
-        "";
-    }
-    return name || "Sin nombre";
-  };
+  const a = (parts[0][0] || "").toUpperCase();
+  const b = (parts[1]?.[0] || "").toUpperCase();
 
-  const getInitials = (item) => {
-    const name = getName(item);
-    const parts = name.split(/\s+/).filter(Boolean);
-    if (!parts.length) return "CT";
-    const a = (parts[0][0] || "").toUpperCase();
-    const b = (parts[1]?.[0] || "").toUpperCase();
-    return (a + b).trim();
-  };
+  return (a + b).trim();
+};
+
+
+const getName = (item) => {
+  // objeto contact anidado (a veces viene vacío)
+  const c = item.contact || {};
+
+  const first = c.firstName || c.first_name || "";
+  const last  = c.lastName  || c.last_name  || "";
+
+  // primero intentamos armar nombre con first + last
+  let name = `${first} ${last}`.trim();
+
+  // si eso viene vacío, usamos otros campos
+  if (!name) {
+    name =
+      c.fullName ||
+      c.full_name ||
+      item.contactName ||      // <-- el que viste en la API
+      item.contact_name ||
+      "";
+  }
+
+  // si aun así no hay nada, dejamos "Sin nombre"
+  return name || "Sin nombre";
+};
 
   const getSnippet = (item) => {
     const text = item.lastMessageBody || "";
@@ -394,7 +364,7 @@ const fetchConversations = (locId, token, { limit, searchTerm } = {}) => {
   };
 
   /* =========================
-   *  STATE
+   *  PANEL STATE
    * ========================= */
 
   const state = {
@@ -402,8 +372,8 @@ const fetchConversations = (locId, token, { limit, searchTerm } = {}) => {
     autoRefreshTimer: null,
     currentSearchTerm: "",
     lastRequestId: 0,
-    currentLimit: PAGE_LIMIT,
-    total: null,
+    currentLimit: PAGE_LIMIT,  // <<< nuevo
+    total: null,               // <<< nuevo
     dom: {},
   };
 
@@ -428,37 +398,26 @@ const fetchConversations = (locId, token, { limit, searchTerm } = {}) => {
    * ========================= */
 
   const filterBySearch = (items) => {
-    const term = (state.currentSearchTerm || "").trim().toLowerCase();
-    if (!term) return items;
+  const term = (state.currentSearchTerm || "").trim().toLowerCase();
+  if (!term) return items;
 
-    return items.filter((item) => {
-      const name = (getName(item) || "").toLowerCase();
-      const snippet = (getSnippet(item) || "").toLowerCase();
-      const phone = (
-        item.phone ||
-        item.phoneNumber ||
-        item.contact?.phone ||
-        ""
-      )
-        .toString()
-        .toLowerCase();
-      const email = (
-        item.contact?.email ||
-        item.contact?.emailAddress ||
-        item.email ||
-        ""
-      )
-        .toString()
-        .toLowerCase();
+  return items.filter((item) => {
+    const name    = (getName(item) || "").toLowerCase();
+    const snippet = (getSnippet(item) || "").toLowerCase();
+    const phone   = (
+      item.phone ||
+      item.phoneNumber ||
+      item.contact?.phone ||
+      ""
+    ).toString().toLowerCase();
 
-      return (
-        name.includes(term) ||
-        snippet.includes(term) ||
-        phone.includes(term) ||
-        email.includes(term)
-      );
-    });
-  };
+    return (
+      name.includes(term) ||
+      snippet.includes(term) ||
+      phone.includes(term)
+    );
+  });
+};
 
   const renderList = (items) => {
     const list = state.dom.list;
@@ -513,6 +472,7 @@ const fetchConversations = (locId, token, { limit, searchTerm } = {}) => {
       bottom.appendChild(chEl);
       bottom.appendChild(snip);
 
+      // badge de no leídos (si viene)
       const unread = (item.unreadCount || item.unread_count || 0) | 0;
       if (unread > 0) {
         const badge = document.createElement("div");
@@ -537,6 +497,7 @@ const fetchConversations = (locId, token, { limit, searchTerm } = {}) => {
         const convId = item.id;
 
         if (window.ghlOpenFloatingConversation && contactId) {
+          // usamos la ventana flotante que ya construiste
           window.ghlOpenFloatingConversation(contactId);
         } else if (locId && convId) {
           const url = `https://app.gohighlevel.com/v2/location/${locId}/conversations/conversations/${convId}?category=team-inbox&tab=all`;
@@ -548,11 +509,14 @@ const fetchConversations = (locId, token, { limit, searchTerm } = {}) => {
     });
   };
 
-  const setMeta = (shownCount, total) => {
+  const setMeta = (count) => {
+    const setMeta = (shownCount, total) => {
     if (!state.dom.meta) return;
     const term = state.currentSearchTerm?.trim();
     const totalSafe = total ?? shownCount;
     const label = term
+      ? `Resultados: ${count} conversación(es) para “${term}”`
+      : `Total: ${count} conversaciones cargadas`;
       ? `Resultados: ${shownCount} conversación(es) (de ${totalSafe}) para “${term}”`
       : `Mostrando ${shownCount} de ${totalSafe} conversaciones`;
     state.dom.meta.textContent = label;
@@ -562,9 +526,12 @@ const fetchConversations = (locId, token, { limit, searchTerm } = {}) => {
     const btn = state.dom.loadMore;
     if (!btn) return;
 
+    // fetchedCount = cuántas conversaciones nos devolvió el API (sin filtro)
+    // total = total reportado por la API
     const t = total ?? fetchedCount;
 
     if (fetchedCount >= t) {
+      // Ya cargamos todas
       btn.style.display = "none";
       btn.disabled = false;
       btn.textContent = "Cargar más conversaciones";
@@ -575,84 +542,57 @@ const fetchConversations = (locId, token, { limit, searchTerm } = {}) => {
     btn.disabled = false;
     btn.textContent = "Cargar más conversaciones";
   };
-
   /* =========================
    *  LOAD
    * ========================= */
 
   const loadConversations = async (showSpinner = true) => {
+const loadConversations = async (showSpinner = true) => {
     const locId = getLocationId();
     const token = getToken();
     if (!locId || !token) {
       console.warn("Sin locationId o token configurado para conversaciones.");
       return;
     }
-const loadConversations = async (showSpinner = true) => {
-  const locId = getLocationId();
-  const token = getToken();
-  if (!locId || !token) {
-    console.warn("Sin locationId o token configurado para conversaciones.");
-    return;
-  }
 
     const reqId = ++state.lastRequestId;
-  const reqId = ++state.lastRequestId;
 
     if (showSpinner && state.dom.status) {
       state.dom.status.textContent = "Actualizando conversaciones...";
     }
-  if (showSpinner && state.dom.status) {
-    state.dom.status.textContent = "Actualizando conversaciones...";
-  }
 
     try {
       const data = await fetchConversations(
         locId,
         token,
-        state.currentLimit || PAGE_LIMIT
+        state.currentSearchTerm
+        state.currentLimit || PAGE_LIMIT   // <<< usamos el límite actual
       );
+      // si llegó una respuesta vieja, la ignoramos
       if (reqId !== state.lastRequestId) return;
-  try {
-    const data = await fetchConversations(locId, token, {
-      limit: state.currentLimit || PAGE_LIMIT,
-      searchTerm: state.currentSearchTerm || "",
-    });
 
+      const items =
       const rawItems =
         data?.conversations ||
         data?.items ||
         data?.records ||
         data?.data ||
         [];
-    if (reqId !== state.lastRequestId) return;
+      renderList(items, true);
+      setMeta(items.length);
 
-      const items = filterBySearch(rawItems);
-    const items =
-      data?.conversations ||
-      data?.items ||
-      data?.records ||
-      data?.data ||
-      [];
+      const items = filterBySearch(rawItems);   // <<< filtro por nombre / texto
 
       const total =
         data?.total ||
         data?.totalCount ||
-        data?.meta?.total ||
         rawItems.length;
-    const total =
-      data?.total ||
-      data?.totalCount ||
-      items.length;
 
       state.total = total;
-    state.total = total;
 
       renderList(items);
-      setMeta(items.length, total);
-      updateLoadMoreButton(rawItems.length, total);
-    renderList(items);
-    setMeta(items.length, total);
-    updateLoadMoreButton(items.length, total);
+      setMeta(items.length, total);            // <<< le pasamos total
+      updateLoadMoreButton(rawItems.length, total); // <<< ver punto 3
 
       if (state.dom.status) state.dom.status.textContent = "";
     } catch (e) {
@@ -661,57 +601,7 @@ const loadConversations = async (showSpinner = true) => {
         state.dom.status.textContent =
           "Error al cargar conversaciones. Reintenta más tarde.";
       }
-    if (state.dom.status) state.dom.status.textContent = "";
-  } catch (e) {
-    console.error("Error cargando conversaciones", e);
-    if (state.dom.status) {
-      state.dom.status.textContent =
-        "Error al cargar conversaciones. Reintenta más tarde.";
     }
-  };
-  }
-};
-
-  /* =========================
-   *  DRAG DEL PANEL
-   * ========================= */
-
-  const setupPanelDrag = (panel, handleEl) => {
-    let offsetX = 0;
-    let offsetY = 0;
-    let dragging = false;
-
-    const onDown = (e) => {
-      if (e.button !== 0) return;
-      if (e.target.closest("button")) return; // no arrastrar cuando clic en botones
-      dragging = true;
-      const rect = panel.getBoundingClientRect();
-      offsetX = e.clientX - rect.left;
-      offsetY = e.clientY - rect.top;
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
-    };
-
-    const onMove = (e) => {
-      if (!dragging) return;
-      const x = e.clientX - offsetX;
-      const y = e.clientY - offsetY;
-      const maxX = window.innerWidth - panel.offsetWidth - 10;
-      const maxY = window.innerHeight - panel.offsetHeight - 10;
-      const newX = Math.max(10, Math.min(maxX, x));
-      const newY = Math.max(10, Math.min(maxY, y));
-      panel.style.left = newX + "px";
-      panel.style.top = newY + "px";
-      panel.style.right = "auto";
-    };
-
-    const onUp = () => {
-      dragging = false;
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    };
-
-    handleEl.addEventListener("mousedown", onDown);
   };
 
   /* =========================
@@ -754,19 +644,13 @@ const loadConversations = async (showSpinner = true) => {
         <path d="M3.51 9a9 9 0 0 1 14.88-3.36L23 10"></path>
         <path d="M1 14l4.62 4.36A9 9 0 0 0 20.49 15"></path>
       </svg>`;
-    btnRefresh.onclick = (e) => {
-      e.stopPropagation();
-      loadConversations(true);
-    };
+    btnRefresh.onclick = () => loadConversations(true);
 
     const btnClose = document.createElement("button");
     btnClose.type = "button";
     btnClose.id = "ghl-conv-panel-close";
     btnClose.textContent = "Cerrar";
-    btnClose.onclick = (e) => {
-      e.stopPropagation();
-      closePanel();
-    };
+    btnClose.onclick = () => closePanel();
 
     hRight.appendChild(btnRefresh);
     hRight.appendChild(btnClose);
@@ -777,7 +661,6 @@ const loadConversations = async (showSpinner = true) => {
     // buscador
     const searchWrap = document.createElement("div");
     searchWrap.id = "ghl-conv-search-wrap";
-
     const search = document.createElement("input");
     search.id = "ghl-conv-search";
     search.type = "text";
@@ -794,49 +677,23 @@ const loadConversations = async (showSpinner = true) => {
     const status = document.createElement("div");
     status.id = "ghl-conv-status";
 
-    // botón Cargar más
-    const loadMore = document.createElement("button");
-    loadMore.id = "ghl-conv-load-more";
-    loadMore.textContent = "Cargar más conversaciones";
-    loadMore.style.display = "none";
-    loadMore.onclick = () => {
-      loadMore.disabled = true;
-      loadMore.textContent = "Cargando...";
-      state.currentLimit = (state.currentLimit || PAGE_LIMIT) + PAGE_LIMIT;
-      loadConversations(true);
-    };
-
     panel.appendChild(header);
     panel.appendChild(searchWrap);
     panel.appendChild(meta);
     panel.appendChild(list);
     panel.appendChild(status);
-    panel.appendChild(loadMore);
 
+    panel.appendChild(loadMore);   // <<< lo añadimos al panel
     backdrop.appendChild(panel);
 
     state.open = true;
-    state.dom = { panel, list, meta, status, search, loadMore };
+    state.dom = { panel, list, meta, status, search };
 
-    // posición inicial: abajo a la derecha con pequeña animación
-    panel.style.opacity = "0";
-    panel.style.transform = "translateY(16px)";
-    requestAnimationFrame(() => {
-      const h = panel.offsetHeight || 520;
-      const w = panel.offsetWidth || 380;
-      panel.style.top =
-        window.scrollY + window.innerHeight - h - 80 + "px";
-      panel.style.left =
-        window.scrollX + window.innerWidth - w - 40 + "px";
-      panel.style.right = "auto";
-      panel.style.opacity = "1";
-      panel.style.transform = "translateY(0)";
-    });
+    // mover un poco si ya hay scroll
+    panel.style.top = window.scrollY + 80 + "px";
 
-    setupPanelDrag(panel, header);
-
-    // debounce local para el buscador
-    const debounceLocal = (fn, ms) => {
+    // eventos del buscador -> API, no solo local
+    const debounce = (fn, ms) => {
       let t;
       return (...args) => {
         clearTimeout(t);
@@ -844,19 +701,14 @@ const loadConversations = async (showSpinner = true) => {
       };
     };
 
-    const onSearch = debounceLocal(() => {
+    const onSearch = debounce(() => {
       state.currentSearchTerm = search.value || "";
+      // reseteamos el límite al buscar, para empezar de nuevo desde las más recientes
       state.currentLimit = PAGE_LIMIT;
       loadConversations(true);
     }, 400);
-    const onSearch = debounce(() => {
-  state.currentSearchTerm = search.value || "";
-  state.currentLimit = PAGE_LIMIT;   // reseteamos el límite al buscar
-  loadConversations(true);
-}, 400);
 
     search.addEventListener("input", onSearch);
-search.addEventListener("input", onSearch);
 
     // primera carga
     loadConversations(true);
@@ -870,7 +722,7 @@ search.addEventListener("input", onSearch);
     const panel = document.getElementById("ghl-conv-panel");
     if (panel) panel.remove();
 
-    // cerrar también las ventanas flotantes de ghl-float.js (si existe la función)
+    // >>> NUEVO: cerrar también todas las ventanas flotantes de ghl-float.js
     try {
       if (window.ghlCloseAllFloatingConversations) {
         window.ghlCloseAllFloatingConversations();
@@ -881,21 +733,19 @@ search.addEventListener("input", onSearch);
   };
 
   /* =========================
-   *  BOTÓN FLOTANTE
+   *  BOTÓN EN VISTA
    * ========================= */
 
   const makeToggleButton = () => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = BTN_CLASS;
-    btn.id = "ghl-conv-toggle-floating";
-    btn.title = "Ver conversaciones recientes";
-    btn.innerHTML = `
+    const span = document.createElement("span");
+    span.className = BTN_CLASS;
+    span.title = "Ver conversaciones recientes";
+    span.innerHTML = `
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
       </svg>`;
-    btn.addEventListener("click", (e) => {
+    span.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
       if (state.open) {
@@ -904,14 +754,18 @@ search.addEventListener("input", onSearch);
         openPanel();
       }
     });
-    return btn;
+    return span;
   };
 
   const injectButton = () => {
     ensureStyles();
-    if (document.getElementById("ghl-conv-toggle-floating")) return;
+    // Buscamos el contenedor de vistas (kanban / list)
+    const views = document.querySelector("div.views") ||
+                  document.querySelector("div.d-flex.views");
+    if (!views) return;
+    if (views.querySelector("." + BTN_CLASS)) return;
     const btn = makeToggleButton();
-    document.body.appendChild(btn);
+    views.appendChild(btn);
   };
 
   const debounce = (fn, ms = 200) => {
