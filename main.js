@@ -586,7 +586,7 @@ const loadConversations = async (showSpinner = true) => {
   try {
     const data = await fetchConversations(locId, token, {
       limit: state.currentLimit || PAGE_LIMIT,
-      searchTerm: state.currentSearchTerm || "",
+      query: state.currentSearchTerm || "",
     });
 
     if (reqId !== state.lastRequestId) return;
