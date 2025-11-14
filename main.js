@@ -1,9 +1,8 @@
 (() => {
   "use strict";
 
-  if (window.__GHL_CONVERSATIONS_FLOAT_V3__) return;
-  window.__GHL_CONVERSATIONS_FLOAT_V3__ = true;
- 
+  if (window.__GHL_CONVERSATIONS_FLOAT_V4__) return;
+  window.__GHL_CONVERSATIONS_FLOAT_V4__ = true;
 
   /* =========================
    *  CONFIG
@@ -74,7 +73,6 @@
         pointer-events:none;
         z-index:100000;
       }
-      /* AHORA EL PANEL ARRANCA ABAJO A LA DERECHA, CERCA DEL BOTÓN */
       #ghl-conv-panel{
         position:fixed;
         right:24px;
@@ -280,6 +278,89 @@
       #ghl-conv-load-more:hover{
         background:#eef2ff;
       }
+
+      /* === POPUP DE FILTROS === */
+      #ghl-conv-filter-popover{
+        position:absolute;
+        top:56px;
+        right:16px;
+        width:340px;
+        max-width:calc(100% - 32px);
+        background:#ffffff;
+        border-radius:14px;
+        box-shadow:0 18px 45px rgba(15,23,42,0.35);
+        padding:12px 14px 12px 14px;
+        z-index:100002;
+        border:1px solid #e5e7eb;
+      }
+      .ghl-filter-title{
+        font-size:13px;
+        font-weight:600;
+        color:#111827;
+        margin-bottom:6px;
+      }
+      .ghl-filter-row{
+        margin-bottom:10px;
+      }
+      .ghl-filter-label{
+        font-size:12px;
+        color:#4b5563;
+        margin-bottom:4px;
+        display:block;
+      }
+      .ghl-filter-select{
+        width:100%;
+        border-radius:8px;
+        border:1px solid #d1d5db;
+        padding:6px 8px;
+        font-size:12px;
+        background:#f9fafb;
+      }
+      .ghl-filter-select:focus{
+        outline:none;
+        border-color:#2563eb;
+        background:#ffffff;
+      }
+      .ghl-filter-chips{
+        display:flex;
+        flex-wrap:wrap;
+        gap:6px;
+      }
+      .ghl-filter-chip{
+        border-radius:999px;
+        border:1px solid #d1d5db;
+        padding:3px 9px;
+        font-size:11px;
+        background:#f9fafb;
+        cursor:pointer;
+      }
+      .ghl-filter-chip.ghl-selected{
+        background:#e0edff;
+        border-color:#2563eb;
+        color:#1d4ed8;
+      }
+      .ghl-filter-footer{
+        display:flex;
+        justify-content:flex-end;
+        gap:8px;
+        margin-top:8px;
+      }
+      .ghl-filter-btn{
+        border-radius:999px;
+        border:1px solid #e5e7eb;
+        padding:5px 12px;
+        font-size:12px;
+        cursor:pointer;
+        background:#f9fafb;
+      }
+      .ghl-filter-btn-primary{
+        background:#2563eb;
+        color:#ffffff;
+        border-color:#2563eb;
+      }
+      .ghl-filter-btn-primary:hover{
+        background:#1d4ed8;
+      }
     `;
     document.head.appendChild(s);
   };
@@ -314,17 +395,41 @@
       xhr.send(null);
     });
 
-  const fetchConversations = (locId, token, { limit, query } = {}) => {
+  const fetchConversations = (locId, token, { limit, query, filters } = {}) => {
     const params = [
       "locationId=" + encodeURIComponent(locId),
       "limit=" + (limit || PAGE_LIMIT),
-      "status=all",
+      "status=" + encodeURIComponent(filters?.status || "all"),
       "sort=desc",
       "sortBy=last_message_date",
     ];
 
     if (query && query.trim()) {
       params.push("searchTerm=" + encodeURIComponent(query.trim()));
+    }
+
+    if (filters) {
+      if (filters.channels && filters.channels.length) {
+        params.push(
+          "lastMessageChannel=" +
+            encodeURIComponent(filters.channels.join(","))
+        );
+      }
+      if (filters.direction) {
+        params.push(
+          "lastMessageDirection=" + encodeURIComponent(filters.direction)
+        );
+      }
+      if (filters.action) {
+        params.push(
+          "lastMessageAction=" + encodeURIComponent(filters.action)
+        );
+      }
+      if (filters.startAfterDate) {
+        params.push(
+          "startAfterDate=" + encodeURIComponent(filters.startAfterDate)
+        );
+      }
     }
 
     const path = "/conversations/search?" + params.join("&");
@@ -380,20 +485,13 @@
   };
 
   const getChannel = (item) => {
-  const raw =
-    item.lastMessageType || item.channel || item.type || "";
-  if (!raw) return "";
-
-  let v = String(raw).trim().toUpperCase();
-
-  // Maneja: TYPE_SMS, TYPE-CUSTOM_SMS, TYPE_CUSTOM_SMS, etc.
-  v = v.replace(/^TYPE(?:_CUSTOM)?[\s._-]*/i, "");
-
-  // Limpia cualquier símbolo raro que quede (guiones, < >, etc.)
-  v = v.replace(/[^A-Z0-9]/g, "");
-
-  return v;
-};
+    const raw = item.lastMessageType || item.channel || item.type || "";
+    if (!raw) return "";
+    let v = String(raw).trim().toUpperCase();
+    v = v.replace(/^TYPE(?:_CUSTOM)?[\s._-]*/i, "");
+    v = v.replace(/[^A-Z0-9]/g, "");
+    return v;
+  };
 
   const state = {
     open: false,
@@ -403,6 +501,13 @@
     currentLimit: PAGE_LIMIT,
     total: null,
     dom: {},
+    filters: {
+      channels: [],
+      status: "all",
+      direction: "",
+      action: "",
+      startAfterDate: "",
+    },
   };
 
   const stopAutoRefresh = () => {
@@ -592,6 +697,7 @@
       const data = await fetchConversations(locId, token, {
         limit: state.currentLimit || PAGE_LIMIT,
         query: state.currentSearchTerm || "",
+        filters: state.filters,
       });
 
       if (reqId !== state.lastRequestId) return;
@@ -666,6 +772,150 @@
   };
 
   /* =========================
+   *  POPUP DE FILTROS
+   * ========================= */
+
+  const openFilterPopover = () => {
+    const panel = state.dom.panel;
+    if (!panel) return;
+
+    let pop = document.getElementById("ghl-conv-filter-popover");
+    if (pop) {
+      pop.remove();
+      return;
+    }
+
+    pop = document.createElement("div");
+    pop.id = "ghl-conv-filter-popover";
+    pop.innerHTML = `
+      <div class="ghl-filter-title">Filtros</div>
+
+      <div class="ghl-filter-row">
+        <span class="ghl-filter-label">Last Message Channel</span>
+        <div class="ghl-filter-chips" data-filter="channels">
+          <button type="button" class="ghl-filter-chip" data-value="EMAIL">Email</button>
+          <button type="button" class="ghl-filter-chip" data-value="SMS">SMS</button>
+          <button type="button" class="ghl-filter-chip" data-value="GBP">GBP</button>
+          <button type="button" class="ghl-filter-chip" data-value="LIVE_CHAT">Live Chat</button>
+          <button type="button" class="ghl-filter-chip" data-value="WHATSAPP">WhatsApp</button>
+          <button type="button" class="ghl-filter-chip" data-value="FACEBOOK">Facebook</button>
+          <button type="button" class="ghl-filter-chip" data-value="CALLS">Calls</button>
+        </div>
+      </div>
+
+      <div class="ghl-filter-row">
+        <span class="ghl-filter-label">Status</span>
+        <select class="ghl-filter-select" id="ghl-filter-status">
+          <option value="all">Todos</option>
+          <option value="read">Read</option>
+          <option value="unread">Unread</option>
+          <option value="starred">Starred</option>
+          <option value="recents">Recents</option>
+        </select>
+      </div>
+
+      <div class="ghl-filter-row">
+        <span class="ghl-filter-label">Last Message Direction</span>
+        <select class="ghl-filter-select" id="ghl-filter-direction">
+          <option value="">Cualquiera</option>
+          <option value="inbound">Inbound</option>
+          <option value="outbound">Outbound</option>
+        </select>
+      </div>
+
+      <div class="ghl-filter-row">
+        <span class="ghl-filter-label">Last Message Action</span>
+        <select class="ghl-filter-select" id="ghl-filter-action">
+          <option value="">Cualquiera</option>
+          <option value="automated">Automated</option>
+          <option value="manual">Manual</option>
+        </select>
+      </div>
+
+      <div class="ghl-filter-footer">
+        <button type="button" class="ghl-filter-btn" data-role="clear">Limpiar</button>
+        <button type="button" class="ghl-filter-btn" data-role="cancel">Cancelar</button>
+        <button type="button" class="ghl-filter-btn ghl-filter-btn-primary" data-role="apply">Aplicar</button>
+      </div>
+    `;
+
+    pop.addEventListener("mousedown", (e) => e.stopPropagation());
+
+    panel.appendChild(pop);
+
+    const channels = state.filters.channels || [];
+    pop
+      .querySelectorAll('.ghl-filter-chip')
+      .forEach((chip) => {
+        const val = chip.getAttribute("data-value");
+        if (channels.includes(val)) {
+          chip.classList.add("ghl-selected");
+        }
+        chip.addEventListener("click", () => {
+          chip.classList.toggle("ghl-selected");
+        });
+      });
+
+    const statusSel = pop.querySelector("#ghl-filter-status");
+    const dirSel = pop.querySelector("#ghl-filter-direction");
+    const actSel = pop.querySelector("#ghl-filter-action");
+
+    statusSel.value = state.filters.status || "all";
+    dirSel.value = state.filters.direction || "";
+    actSel.value = state.filters.action || "";
+
+    const btnClear = pop.querySelector('[data-role="clear"]');
+    const btnCancel = pop.querySelector('[data-role="cancel"]');
+    const btnApply = pop.querySelector('[data-role="apply"]');
+
+    btnCancel.addEventListener("click", () => {
+      pop.remove();
+    });
+
+    btnClear.addEventListener("click", () => {
+      pop
+        .querySelectorAll(".ghl-filter-chip.ghl-selected")
+        .forEach((c) => c.classList.remove("ghl-selected"));
+      statusSel.value = "all";
+      dirSel.value = "";
+      actSel.value = "";
+
+      state.filters = {
+        channels: [],
+        status: "all",
+        direction: "",
+        action: "",
+        startAfterDate: "",
+      };
+      state.currentLimit = PAGE_LIMIT;
+      loadConversations(true);
+      pop.remove();
+    });
+
+    btnApply.addEventListener("click", () => {
+      const selectedChannels = Array.from(
+        pop.querySelectorAll(".ghl-filter-chip.ghl-selected")
+      ).map((c) => c.getAttribute("data-value"));
+
+      const newStatus = statusSel.value || "all";
+      const newDir = dirSel.value || "";
+      const newAct = actSel.value || "";
+
+      state.filters = {
+        ...state.filters,
+        channels: selectedChannels,
+        status: newStatus,
+        direction: newDir,
+        action: newAct,
+      };
+
+      state.currentLimit = PAGE_LIMIT;
+      loadConversations(true);
+      pop.remove();
+    });
+  };
+
+  /* =========================
    *  PANEL UI
    * ========================= */
 
@@ -691,6 +941,20 @@
 
     const hRight = document.createElement("div");
     hRight.id = "ghl-conv-panel-header-right";
+
+    const btnFilter = document.createElement("button");
+    btnFilter.type = "button";
+    btnFilter.className = "ghl-conv-icon-btn";
+    btnFilter.title = "Filtros";
+    btnFilter.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="3 4 21 4 14 12 14 19 10 21 10 12 3 4"></polygon>
+      </svg>`;
+    btnFilter.onclick = (e) => {
+      e.stopPropagation();
+      openFilterPopover();
+    };
 
     const btnRefresh = document.createElement("button");
     btnRefresh.type = "button";
@@ -718,6 +982,7 @@
       closePanel();
     };
 
+    hRight.appendChild(btnFilter);
     hRight.appendChild(btnRefresh);
     hRight.appendChild(btnClose);
 
@@ -779,7 +1044,6 @@
     const onSearch = debounceSearch(() => {
       state.currentSearchTerm = search.value || "";
       state.currentLimit = PAGE_LIMIT;
-      console.log("[CONV-SEARCH] query =", state.currentSearchTerm);
       loadConversations(true);
     });
 
