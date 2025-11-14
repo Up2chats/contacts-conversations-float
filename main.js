@@ -322,8 +322,9 @@ const fetchConversations = (locId, token, { limit, searchTerm } = {}) => {
     "sortBy=last_message_date",
   ];
 
+  // 👈 AQUÍ EL CAMBIO IMPORTANTE: usar `query`, no `searchTerm`
   if (searchTerm && searchTerm.trim()) {
-    params.push("searchTerm=" + encodeURIComponent(searchTerm.trim()));
+    params.push("query=" + encodeURIComponent(searchTerm.trim()));
   }
 
   const path = "/conversations/search?" + params.join("&");
@@ -721,6 +722,7 @@ const loadConversations = async (showSpinner = true) => {
     header.appendChild(hRight);
 
     // buscador
+        // buscador
     const searchWrap = document.createElement("div");
     searchWrap.id = "ghl-conv-search-wrap";
 
@@ -730,59 +732,11 @@ const loadConversations = async (showSpinner = true) => {
     search.placeholder = "Buscar por nombre o mensaje…";
     search.autocomplete = "off";
     searchWrap.appendChild(search);
-
-    const meta = document.createElement("div");
-    meta.id = "ghl-conv-meta";
-
-    const list = document.createElement("div");
-    list.id = "ghl-conv-list";
-
-    const status = document.createElement("div");
-    status.id = "ghl-conv-status";
-
-    // botón Cargar más
-    const loadMore = document.createElement("button");
-    loadMore.id = "ghl-conv-load-more";
-    loadMore.textContent = "Cargar más conversaciones";
-    loadMore.style.display = "none";
-    loadMore.onclick = () => {
-      loadMore.disabled = true;
-      loadMore.textContent = "Cargando...";
-      state.currentLimit = (state.currentLimit || PAGE_LIMIT) + PAGE_LIMIT;
-      loadConversations(true);
-    };
-
-    panel.appendChild(header);
-    panel.appendChild(searchWrap);
-    panel.appendChild(meta);
-    panel.appendChild(list);
-    panel.appendChild(status);
-    panel.appendChild(loadMore);
-
-    backdrop.appendChild(panel);
-
-    state.open = true;
+    ...
     state.dom = { panel, list, meta, status, search, loadMore };
 
-    // posición inicial: abajo a la derecha con pequeña animación
-    panel.style.opacity = "0";
-    panel.style.transform = "translateY(16px)";
-    requestAnimationFrame(() => {
-      const h = panel.offsetHeight || 520;
-      const w = panel.offsetWidth || 380;
-      panel.style.top =
-        window.scrollY + window.innerHeight - h - 80 + "px";
-      panel.style.left =
-        window.scrollX + window.innerWidth - w - 40 + "px";
-      panel.style.right = "auto";
-      panel.style.opacity = "1";
-      panel.style.transform = "translateY(0)";
-    });
-
-    setupPanelDrag(panel, header);
-
-    // debounce local para el buscador
-    const debounceLocal = (fn, ms) => {
+    // === BÚSQUEDA (con debounce suave para no spamear el API) ===
+    const debounceSearch = (fn, ms = 400) => {
       let t;
       return (...args) => {
         clearTimeout(t);
@@ -790,13 +744,14 @@ const loadConversations = async (showSpinner = true) => {
       };
     };
 
-    const onSearch = debounce(() => {
-  state.currentSearchTerm = search.value || "";
-  state.currentLimit = PAGE_LIMIT;   // reseteamos el límite al buscar
-  loadConversations(true);
-}, 400);
+    const onSearch = debounceSearch(() => {
+      state.currentSearchTerm = search.value || "";
+      state.currentLimit = PAGE_LIMIT;  // reset del límite
+      console.log("[CONV-SEARCH] query =", state.currentSearchTerm);
+      loadConversations(true);
+    });
 
-search.addEventListener("input", onSearch);
+    search.addEventListener("input", onSearch);
 
     // primera carga
     loadConversations(true);
