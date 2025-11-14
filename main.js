@@ -386,6 +386,7 @@
     if (!raw) return "";
     let v = String(raw).toUpperCase();
     v = v.replace(/^TYPE[_-]?/i, ""); // TYPE_SMS -> SMS, TYPE-PHONE -> PHONE
+    v = v.replace(/^CUSTOM[_-]?/i, ""); // TYPE_SMS -> SMS, CUSTOM-PHONE -> PHONE
     return v;
   };
 
