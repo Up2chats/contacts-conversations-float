@@ -1,8 +1,9 @@
 (() => {
   "use strict";
-  if (window.__GHL_CONVERSATIONS_FLOAT_V2__) return;
-  window.__GHL_CONVERSATIONS_FLOAT_V2__ = true;
-  console.log("[CONV-FLOAT] Script v2 cargado");
+
+  if (window.__GHL_CONVERSATIONS_FLOAT_V3__) return;
+  window.__GHL_CONVERSATIONS_FLOAT_V3__ = true;
+  console.log("[CONV-FLOAT] Script v3 cargado");
 
   /* =========================
    *  CONFIG
@@ -313,23 +314,27 @@
       xhr.send(null);
     });
 
-  // usamos `query` para buscar por nombre / mensaje / teléfono / email
+  // usamos searchTerm (si HL lo respeta) + filtro en front
   const fetchConversations = (locId, token, { limit, query } = {}) => {
     const params = [
       "locationId=" + encodeURIComponent(locId),
       "limit=" + (limit || PAGE_LIMIT),
       "status=all",
       "sort=desc",
-      "sortBy=last_message_date"
+      "sortBy=last_message_date",
     ];
 
     if (query && query.trim()) {
-      params.push("query=" + encodeURIComponent(query.trim()));
+      params.push("searchTerm=" + encodeURIComponent(query.trim()));
     }
 
     const path = "/conversations/search?" + params.join("&");
     return apiFetch("GET", path, token);
   };
+
+  /* =========================
+   *  HELPERS / STATE
+   * ========================= */
 
   const formatTime = (iso) => {
     if (!iso) return "";
@@ -337,7 +342,7 @@
     if (Number.isNaN(d.getTime())) return "";
     return d.toLocaleTimeString(undefined, {
       hour: "numeric",
-      minute: "2-digit"
+      minute: "2-digit",
     });
   };
 
@@ -381,10 +386,6 @@
     return String(ch).toUpperCase();
   };
 
-  /* =========================
-   *  STATE
-   * ========================= */
-
   const state = {
     open: false,
     autoRefreshTimer: null,
@@ -392,7 +393,7 @@
     lastRequestId: 0,
     currentLimit: PAGE_LIMIT,
     total: null,
-    dom: {}
+    dom: {},
   };
 
   const stopAutoRefresh = () => {
@@ -410,10 +411,6 @@
       loadConversations(false);
     }, REFRESH_INTERVAL_MS);
   };
-
-  /* =========================
-   *  RENDER
-   * ========================= */
 
   const filterBySearch = (items) => {
     const term = (state.currentSearchTerm || "").trim().toLowerCase();
@@ -448,11 +445,9 @@
     });
   };
 
-  const renderList = (itemsRaw) => {
+  const renderList = (items) => {
     const list = state.dom.list;
     list.innerHTML = "";
-
-    const items = filterBySearch(itemsRaw || []);
 
     if (!items || !items.length) {
       const empty = document.createElement("div");
@@ -587,7 +582,7 @@
     try {
       const data = await fetchConversations(locId, token, {
         limit: state.currentLimit || PAGE_LIMIT,
-        query: state.currentSearchTerm || ""
+        query: state.currentSearchTerm || "",
       });
 
       if (reqId !== state.lastRequestId) return;
@@ -599,15 +594,13 @@
         data?.data ||
         [];
 
-      const total =
-        data?.total ||
-        data?.totalCount ||
-        items.length;
-
+      const total = data?.total || data?.totalCount || items.length;
       state.total = total;
 
-      renderList(items);
-      setMeta(items.length, total);
+      const filtered = filterBySearch(items);
+
+      renderList(filtered);
+      setMeta(filtered.length, total);
       updateLoadMoreButton(items.length, total);
 
       if (state.dom.status) state.dom.status.textContent = "";
@@ -631,7 +624,7 @@
 
     const onDown = (e) => {
       if (e.button !== 0) return;
-      if (e.target.closest("button")) return; // no arrastrar cuando clic en botones
+      if (e.target.closest("button")) return; // no arrastrar desde los botones
       dragging = true;
       const rect = panel.getBoundingClientRect();
       offsetX = e.clientX - rect.left;
@@ -765,10 +758,10 @@
     state.open = true;
     state.dom = { panel, list, meta, status, search, loadMore };
 
-    // hacer el panel arrastrable
+    // hacer el panel movible
     setupPanelDrag(panel, header);
 
-    // === BÚSQUEDA (con debounce suave para no spamear el API) ===
+    // === BÚSQUEDA (debounce para no spamear el API) ===
     const debounceSearch = (fn, ms = 400) => {
       let t;
       return (...args) => {
@@ -798,7 +791,6 @@
     const panel = document.getElementById("ghl-conv-panel");
     if (panel) panel.remove();
 
-    // cerrar también las ventanas flotantes de ghl-float.js (si existe la función)
     try {
       if (window.ghlCloseAllFloatingConversations) {
         window.ghlCloseAllFloatingConversations();
