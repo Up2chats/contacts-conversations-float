@@ -1,10 +1,8 @@
 (() => {
   "use strict";
-
-  // Evitar doble carga
   if (window.__GHL_CONVERSATIONS_FLOAT_V2__) return;
   window.__GHL_CONVERSATIONS_FLOAT_V2__ = true;
-  console.log("[CONV-FLOAT] v2 inicializado");
+  console.log("[CONV-FLOAT] Script v2 cargado");
 
   /* =========================
    *  CONFIG
@@ -78,12 +76,12 @@
       }
       #ghl-conv-panel{
         position:absolute;
-        right:24px;
-        bottom:80px;
+        right:40px;
+        top:80px;
         width:380px;
         max-width:calc(100vw - 40px);
         height:520px;
-        max-height:calc(100vh - 120px);
+        max-height:calc(100vh - 40px);
         background:#fff;
         border-radius:18px;
         box-shadow:0 22px 60px rgba(15,23,42,0.32);
@@ -315,8 +313,8 @@
       xhr.send(null);
     });
 
-  // Aquí NO usamos searchTerm en el backend, solo limit.
-  const fetchConversations = (locId, token, { limit } = {}) => {
+  // usamos `query` para buscar por nombre / mensaje / teléfono / email
+  const fetchConversations = (locId, token, { limit, query } = {}) => {
     const params = [
       "locationId=" + encodeURIComponent(locId),
       "limit=" + (limit || PAGE_LIMIT),
@@ -324,13 +322,14 @@
       "sort=desc",
       "sortBy=last_message_date"
     ];
+
+    if (query && query.trim()) {
+      params.push("query=" + encodeURIComponent(query.trim()));
+    }
+
     const path = "/conversations/search?" + params.join("&");
     return apiFetch("GET", path, token);
   };
-
-  /* =========================
-   *  HELPERS
-   * ========================= */
 
   const formatTime = (iso) => {
     if (!iso) return "";
@@ -338,7 +337,7 @@
     if (Number.isNaN(d.getTime())) return "";
     return d.toLocaleTimeString(undefined, {
       hour: "numeric",
-      minute: "2-digit",
+      minute: "2-digit"
     });
   };
 
@@ -393,8 +392,7 @@
     lastRequestId: 0,
     currentLimit: PAGE_LIMIT,
     total: null,
-    itemsCache: [],
-    dom: {},
+    dom: {}
   };
 
   const stopAutoRefresh = () => {
@@ -450,9 +448,11 @@
     });
   };
 
-  const renderList = (items) => {
+  const renderList = (itemsRaw) => {
     const list = state.dom.list;
     list.innerHTML = "";
+
+    const items = filterBySearch(itemsRaw || []);
 
     if (!items || !items.length) {
       const empty = document.createElement("div");
@@ -575,10 +575,6 @@
     const token = getToken();
     if (!locId || !token) {
       console.warn("Sin locationId o token configurado para conversaciones.");
-      if (state.dom.status) {
-        state.dom.status.textContent =
-          "Falta token o locationId para cargar conversaciones.";
-      }
       return;
     }
 
@@ -591,6 +587,7 @@
     try {
       const data = await fetchConversations(locId, token, {
         limit: state.currentLimit || PAGE_LIMIT,
+        query: state.currentSearchTerm || ""
       });
 
       if (reqId !== state.lastRequestId) return;
@@ -608,12 +605,9 @@
         items.length;
 
       state.total = total;
-      state.itemsCache = items;
 
-      const filtered = filterBySearch(items);
-
-      renderList(filtered);
-      setMeta(filtered.length, total);
+      renderList(items);
+      setMeta(items.length, total);
       updateLoadMoreButton(items.length, total);
 
       if (state.dom.status) state.dom.status.textContent = "";
@@ -637,7 +631,7 @@
 
     const onDown = (e) => {
       if (e.button !== 0) return;
-      if (e.target.closest("button")) return; // no arrastrar sobre botones
+      if (e.target.closest("button")) return; // no arrastrar cuando clic en botones
       dragging = true;
       const rect = panel.getBoundingClientRect();
       offsetX = e.clientX - rect.left;
@@ -657,7 +651,6 @@
       panel.style.left = newX + "px";
       panel.style.top = newY + "px";
       panel.style.right = "auto";
-      panel.style.bottom = "auto";
     };
 
     const onUp = () => {
@@ -772,10 +765,10 @@
     state.open = true;
     state.dom = { panel, list, meta, status, search, loadMore };
 
-    // drag
+    // hacer el panel arrastrable
     setupPanelDrag(panel, header);
 
-    // búsqueda con debounce (filtra en cache local)
+    // === BÚSQUEDA (con debounce suave para no spamear el API) ===
     const debounceSearch = (fn, ms = 400) => {
       let t;
       return (...args) => {
@@ -786,9 +779,9 @@
 
     const onSearch = debounceSearch(() => {
       state.currentSearchTerm = search.value || "";
-      const filtered = filterBySearch(state.itemsCache || []);
-      renderList(filtered);
-      setMeta(filtered.length, state.total ?? filtered.length);
+      state.currentLimit = PAGE_LIMIT; // reset del límite
+      console.log("[CONV-SEARCH] query =", state.currentSearchTerm);
+      loadConversations(true);
     });
 
     search.addEventListener("input", onSearch);
@@ -805,6 +798,7 @@
     const panel = document.getElementById("ghl-conv-panel");
     if (panel) panel.remove();
 
+    // cerrar también las ventanas flotantes de ghl-float.js (si existe la función)
     try {
       if (window.ghlCloseAllFloatingConversations) {
         window.ghlCloseAllFloatingConversations();
@@ -843,12 +837,9 @@
 
   const injectButton = () => {
     ensureStyles();
-    if (document.getElementById("ghl-conv-toggle-floating")) {
-      return;
-    }
+    if (document.getElementById("ghl-conv-toggle-floating")) return;
     const btn = makeToggleButton();
     document.body.appendChild(btn);
-    console.log("[CONV-FLOAT] botón inyectado");
   };
 
   const debounce = (fn, ms = 200) => {
@@ -860,7 +851,6 @@
   };
 
   const handle = debounce(injectButton, 200);
-
   const observer = new MutationObserver(handle);
   observer.observe(document.documentElement, { childList: true, subtree: true });
 
@@ -872,9 +862,8 @@
         window.dispatchEvent(new Event("ghl:navigation"));
         return ret;
       };
-    } catch (e) {}
+    } catch {}
   });
-
   window.addEventListener("popstate", () =>
     window.dispatchEvent(new Event("ghl:navigation"))
   );
