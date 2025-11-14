@@ -380,15 +380,18 @@
   };
 
   // NUEVO: usamos lastMessageType y quitamos "TYPE_" o "TYPE-"
-  const getChannel = (item) => {
-    const raw =
-      item.lastMessageType || item.channel || item.type || "";
-    if (!raw) return "";
-    let v = String(raw).toUpperCase();
-      // Elimina TYPE_, TYPE- , CUSTOM_, CUSTOM-
-    v = v.replace(/^(TYPE|CUSTOM)[_-]?/i, "");
-    return v;
-  };
+ const getChannel = (item) => {
+  const raw =
+    item.lastMessageType || item.channel || item.type || "";
+  if (!raw) return "";
+
+  let v = String(raw).trim().toUpperCase();
+
+  // Eliminar prefijos TYPE / CUSTOM en CUALQUIER FORMATO
+  v = v.replace(/^(TYPE|CUSTOM)[\s._-]*/i, "");
+
+  return v;
+};
 
   const state = {
     open: false,
