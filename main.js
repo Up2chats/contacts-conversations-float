@@ -3,7 +3,7 @@
 
   if (window.__GHL_CONVERSATIONS_FLOAT_V3__) return;
   window.__GHL_CONVERSATIONS_FLOAT_V3__ = true;
-  console.log("[CONV-FLOAT] Script v3 cargado");
+  console.log("[CONV-FLOAT] Script v3.1 cargado");
 
   /* =========================
    *  CONFIG
@@ -21,7 +21,6 @@
   const getLocationIdFromPath = () =>
     (location.pathname.match(/\/location\/([^/]+)/) || [])[1] || null;
 
-  // leemos data-* del script
   const currentScript =
     document.currentScript ||
     (function () {
@@ -75,10 +74,11 @@
         pointer-events:none;
         z-index:100000;
       }
+      /* AHORA EL PANEL ARRANCA ABAJO A LA DERECHA, CERCA DEL BOTÓN */
       #ghl-conv-panel{
-        position:absolute;
-        right:40px;
-        top:80px;
+        position:fixed;
+        right:24px;
+        bottom:96px;
         width:380px;
         max-width:calc(100vw - 40px);
         height:520px;
@@ -314,7 +314,6 @@
       xhr.send(null);
     });
 
-  // usamos searchTerm (si HL lo respeta) + filtro en front
   const fetchConversations = (locId, token, { limit, query } = {}) => {
     const params = [
       "locationId=" + encodeURIComponent(locId),
@@ -380,10 +379,14 @@
     return "";
   };
 
+  // NUEVO: usamos lastMessageType y quitamos "TYPE_" o "TYPE-"
   const getChannel = (item) => {
-    const ch = item.channel || item.type || "";
-    if (!ch) return "";
-    return String(ch).toUpperCase();
+    const raw =
+      item.lastMessageType || item.channel || item.type || "";
+    if (!raw) return "";
+    let v = String(raw).toUpperCase();
+    v = v.replace(/^TYPE[_-]?/i, ""); // TYPE_SMS -> SMS, TYPE-PHONE -> PHONE
+    return v;
   };
 
   const state = {
@@ -624,7 +627,7 @@
 
     const onDown = (e) => {
       if (e.button !== 0) return;
-      if (e.target.closest("button")) return; // no arrastrar desde los botones
+      if (e.target.closest("button")) return;
       dragging = true;
       const rect = panel.getBoundingClientRect();
       offsetX = e.clientX - rect.left;
@@ -644,6 +647,7 @@
       panel.style.left = newX + "px";
       panel.style.top = newY + "px";
       panel.style.right = "auto";
+      panel.style.bottom = "auto";
     };
 
     const onUp = () => {
@@ -673,7 +677,6 @@
     const panel = document.createElement("div");
     panel.id = "ghl-conv-panel";
 
-    // header
     const header = document.createElement("div");
     header.id = "ghl-conv-panel-header";
 
@@ -715,7 +718,6 @@
     header.appendChild(title);
     header.appendChild(hRight);
 
-    // buscador
     const searchWrap = document.createElement("div");
     searchWrap.id = "ghl-conv-search-wrap";
 
@@ -758,10 +760,8 @@
     state.open = true;
     state.dom = { panel, list, meta, status, search, loadMore };
 
-    // hacer el panel movible
     setupPanelDrag(panel, header);
 
-    // === BÚSQUEDA (debounce para no spamear el API) ===
     const debounceSearch = (fn, ms = 400) => {
       let t;
       return (...args) => {
@@ -772,14 +772,13 @@
 
     const onSearch = debounceSearch(() => {
       state.currentSearchTerm = search.value || "";
-      state.currentLimit = PAGE_LIMIT; // reset del límite
+      state.currentLimit = PAGE_LIMIT;
       console.log("[CONV-SEARCH] query =", state.currentSearchTerm);
       loadConversations(true);
     });
 
     search.addEventListener("input", onSearch);
 
-    // primera carga
     loadConversations(true);
     startAutoRefresh();
   };
