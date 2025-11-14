@@ -7,7 +7,7 @@
    *  CONFIG
    * ========================= */
 
-  const REFRESH_INTERVAL_MS = 10000; // ⏱ auto refresh cada 10s
+  const REFRESH_INTERVAL_MS = 10000; // auto refresh cada 10s
   const PAGE_LIMIT = 20;
 
   const API_BASE = "https://services.leadconnectorhq.com";
@@ -43,15 +43,24 @@
     s.id = STYLE_ID;
     s.textContent = `
       .${BTN_CLASS}{
+        position:fixed;
+        bottom:24px;
+        right:24px;
+        width:42px;
+        height:42px;
+        border-radius:999px;
+        background:#ffffff;
+        border:1px solid #e5e7eb;
+        box-shadow:0 12px 30px rgba(15,23,42,0.28);
         display:inline-flex;
         align-items:center;
         justify-content:center;
-        margin-left:6px;
         cursor:pointer;
+        z-index:100001;
       }
       .${BTN_CLASS} svg{
-        width:18px;
-        height:18px;
+        width:20px;
+        height:20px;
         color:#4b5563;
       }
       .${BTN_CLASS}:hover svg{
@@ -79,6 +88,7 @@
         flex-direction:column;
         pointer-events:auto;
         overflow:hidden;
+        transition:transform 0.18s ease-out, opacity 0.18s ease-out;
       }
       #ghl-conv-panel-header{
         flex:0 0 auto;
@@ -88,6 +98,8 @@
         justify-content:space-between;
         border-bottom:1px solid #e5e7eb;
         gap:8px;
+        cursor:move;
+        user-select:none;
       }
       #ghl-conv-panel-header h3{
         margin:0;
@@ -264,7 +276,7 @@
         cursor:pointer;
       }
       #ghl-conv-load-more:hover{
-        background:#f3f4f6;
+        background:#eef2ff;
       }
     `;
     document.head.appendChild(s);
@@ -300,7 +312,8 @@
       xhr.send(null);
     });
 
-  const fetchConversations = (locId, token, limit, searchTerm) => {
+  // OJO: aquí NO usamos searchTerm, solo limit.
+  const fetchConversations = (locId, token, limit) => {
     const params = [
       "locationId=" + encodeURIComponent(locId),
       "limit=" + (limit || PAGE_LIMIT),
@@ -308,12 +321,6 @@
       "sort=desc",
       "sortBy=last_message_date",
     ];
-
-    // también dejamos que el backend filtre por searchTerm
-    if (searchTerm && searchTerm.trim()) {
-      params.push("searchTerm=" + encodeURIComponent(searchTerm.trim()));
-    }
-
     const path = "/conversations/search?" + params.join("&");
     return apiFetch("GET", path, token);
   };
@@ -330,7 +337,6 @@
 
   const getName = (item) => {
     const c = item.contact || {};
-
     const first = c.firstName || c.first_name || "";
     const last = c.lastName || c.last_name || "";
 
@@ -340,23 +346,19 @@
       name =
         c.fullName ||
         c.full_name ||
-        item.contactName || // el que viste en la API
+        item.contactName ||
         item.contact_name ||
         "";
     }
-
     return name || "Sin nombre";
   };
 
   const getInitials = (item) => {
     const name = getName(item);
     const parts = name.split(/\s+/).filter(Boolean);
-
     if (!parts.length) return "CT";
-
     const a = (parts[0][0] || "").toUpperCase();
     const b = (parts[1]?.[0] || "").toUpperCase();
-
     return (a + b).trim();
   };
 
@@ -374,7 +376,7 @@
   };
 
   /* =========================
-   *  PANEL STATE
+   *  STATE
    * ========================= */
 
   const state = {
@@ -422,11 +424,20 @@
       )
         .toString()
         .toLowerCase();
+      const email = (
+        item.contact?.email ||
+        item.contact?.emailAddress ||
+        item.email ||
+        ""
+      )
+        .toString()
+        .toLowerCase();
 
       return (
         name.includes(term) ||
         snippet.includes(term) ||
-        phone.includes(term)
+        phone.includes(term) ||
+        email.includes(term)
       );
     });
   };
@@ -569,8 +580,7 @@
       const data = await fetchConversations(
         locId,
         token,
-        state.currentLimit || PAGE_LIMIT,
-        state.currentSearchTerm
+        state.currentLimit || PAGE_LIMIT
       );
       if (reqId !== state.lastRequestId) return;
 
@@ -586,6 +596,7 @@
       const total =
         data?.total ||
         data?.totalCount ||
+        data?.meta?.total ||
         rawItems.length;
 
       state.total = total;
@@ -602,6 +613,48 @@
           "Error al cargar conversaciones. Reintenta más tarde.";
       }
     }
+  };
+
+  /* =========================
+   *  DRAG DEL PANEL
+   * ========================= */
+
+  const setupPanelDrag = (panel, handleEl) => {
+    let offsetX = 0;
+    let offsetY = 0;
+    let dragging = false;
+
+    const onDown = (e) => {
+      if (e.button !== 0) return;
+      if (e.target.closest("button")) return; // no arrastrar cuando clic en botones
+      dragging = true;
+      const rect = panel.getBoundingClientRect();
+      offsetX = e.clientX - rect.left;
+      offsetY = e.clientY - rect.top;
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    };
+
+    const onMove = (e) => {
+      if (!dragging) return;
+      const x = e.clientX - offsetX;
+      const y = e.clientY - offsetY;
+      const maxX = window.innerWidth - panel.offsetWidth - 10;
+      const maxY = window.innerHeight - panel.offsetHeight - 10;
+      const newX = Math.max(10, Math.min(maxX, x));
+      const newY = Math.max(10, Math.min(maxY, y));
+      panel.style.left = newX + "px";
+      panel.style.top = newY + "px";
+      panel.style.right = "auto";
+    };
+
+    const onUp = () => {
+      dragging = false;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+
+    handleEl.addEventListener("mousedown", onDown);
   };
 
   /* =========================
@@ -644,13 +697,19 @@
         <path d="M3.51 9a9 9 0 0 1 14.88-3.36L23 10"></path>
         <path d="M1 14l4.62 4.36A9 9 0 0 0 20.49 15"></path>
       </svg>`;
-    btnRefresh.onclick = () => loadConversations(true);
+    btnRefresh.onclick = (e) => {
+      e.stopPropagation();
+      loadConversations(true);
+    };
 
     const btnClose = document.createElement("button");
     btnClose.type = "button";
     btnClose.id = "ghl-conv-panel-close";
     btnClose.textContent = "Cerrar";
-    btnClose.onclick = () => closePanel();
+    btnClose.onclick = (e) => {
+      e.stopPropagation();
+      closePanel();
+    };
 
     hRight.appendChild(btnRefresh);
     hRight.appendChild(btnClose);
@@ -661,6 +720,7 @@
     // buscador
     const searchWrap = document.createElement("div");
     searchWrap.id = "ghl-conv-search-wrap";
+
     const search = document.createElement("input");
     search.id = "ghl-conv-search";
     search.type = "text";
@@ -677,7 +737,7 @@
     const status = document.createElement("div");
     status.id = "ghl-conv-status";
 
-    // botón cargar más
+    // botón Cargar más
     const loadMore = document.createElement("button");
     loadMore.id = "ghl-conv-load-more";
     loadMore.textContent = "Cargar más conversaciones";
@@ -701,9 +761,25 @@
     state.open = true;
     state.dom = { panel, list, meta, status, search, loadMore };
 
-    panel.style.top = window.scrollY + 80 + "px";
+    // posición inicial: abajo a la derecha con pequeña animación
+    panel.style.opacity = "0";
+    panel.style.transform = "translateY(16px)";
+    requestAnimationFrame(() => {
+      const h = panel.offsetHeight || 520;
+      const w = panel.offsetWidth || 380;
+      panel.style.top =
+        window.scrollY + window.innerHeight - h - 80 + "px";
+      panel.style.left =
+        window.scrollX + window.innerWidth - w - 40 + "px";
+      panel.style.right = "auto";
+      panel.style.opacity = "1";
+      panel.style.transform = "translateY(0)";
+    });
 
-    const debounce = (fn, ms) => {
+    setupPanelDrag(panel, header);
+
+    // debounce local para el buscador
+    const debounceLocal = (fn, ms) => {
       let t;
       return (...args) => {
         clearTimeout(t);
@@ -711,7 +787,7 @@
       };
     };
 
-    const onSearch = debounce(() => {
+    const onSearch = debounceLocal(() => {
       state.currentSearchTerm = search.value || "";
       state.currentLimit = PAGE_LIMIT;
       loadConversations(true);
@@ -719,6 +795,7 @@
 
     search.addEventListener("input", onSearch);
 
+    // primera carga
     loadConversations(true);
     startAutoRefresh();
   };
@@ -730,7 +807,7 @@
     const panel = document.getElementById("ghl-conv-panel");
     if (panel) panel.remove();
 
-    // cerrar también las ventanas flotantes de ghl-float.js
+    // cerrar también las ventanas flotantes de ghl-float.js (si existe la función)
     try {
       if (window.ghlCloseAllFloatingConversations) {
         window.ghlCloseAllFloatingConversations();
@@ -741,19 +818,21 @@
   };
 
   /* =========================
-   *  BOTÓN EN VISTA
+   *  BOTÓN FLOTANTE
    * ========================= */
 
   const makeToggleButton = () => {
-    const span = document.createElement("span");
-    span.className = BTN_CLASS;
-    span.title = "Ver conversaciones recientes";
-    span.innerHTML = `
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = BTN_CLASS;
+    btn.id = "ghl-conv-toggle-floating";
+    btn.title = "Ver conversaciones recientes";
+    btn.innerHTML = `
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
       </svg>`;
-    span.addEventListener("click", (e) => {
+    btn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
       if (state.open) {
@@ -762,18 +841,14 @@
         openPanel();
       }
     });
-    return span;
+    return btn;
   };
 
   const injectButton = () => {
     ensureStyles();
-    const views =
-      document.querySelector("div.views") ||
-      document.querySelector("div.d-flex.views");
-    if (!views) return;
-    if (views.querySelector("." + BTN_CLASS)) return;
+    if (document.getElementById("ghl-conv-toggle-floating")) return;
     const btn = makeToggleButton();
-    views.appendChild(btn);
+    document.body.appendChild(btn);
   };
 
   const debounce = (fn, ms = 200) => {
@@ -786,10 +861,7 @@
 
   const handle = debounce(injectButton, 200);
   const observer = new MutationObserver(handle);
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree: true,
-  });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
 
   ["pushState", "replaceState"].forEach((fn) => {
     try {
