@@ -313,7 +313,7 @@
     });
 
   // OJO: aquí NO usamos searchTerm, solo limit.
-const fetchConversations = (locId, token, { limit, searchTerm } = {}) => {
+const fetchConversations = (locId, token, { limit, query } = {}) => {
   const params = [
     "locationId=" + encodeURIComponent(locId),
     "limit=" + (limit || PAGE_LIMIT),
@@ -322,9 +322,8 @@ const fetchConversations = (locId, token, { limit, searchTerm } = {}) => {
     "sortBy=last_message_date",
   ];
 
-  // 👈 AQUÍ EL CAMBIO IMPORTANTE: usar `query`, no `searchTerm`
-  if (searchTerm && searchTerm.trim()) {
-    params.push("query=" + encodeURIComponent(searchTerm.trim()));
+  if (query && query.trim()) {
+    params.push("query=" + encodeURIComponent(query.trim()));
   }
 
   const path = "/conversations/search?" + params.join("&");
