@@ -379,16 +379,18 @@
     return "";
   };
 
-  // NUEVO: usamos lastMessageType y quitamos "TYPE_" o "TYPE-"
- const getChannel = (item) => {
+  const getChannel = (item) => {
   const raw =
     item.lastMessageType || item.channel || item.type || "";
   if (!raw) return "";
 
   let v = String(raw).trim().toUpperCase();
 
-  // Eliminar prefijos TYPE / CUSTOM en CUALQUIER FORMATO
-  v = v.replace(/^(TYPE|CUSTOM)[\s._-]*/i, "");
+  // 1) Eliminar TODOS los prefijos TYPE o CUSTOM repetidos o combinados
+  v = v.replace(/(TYPE|CUSTOM)[\s._-]*/gi, "");
+
+  // 2) Si queda "SMS" pero combinado con otros símbolos, limpiamos
+  v = v.replace(/[^A-Z0-9]/g, "");
 
   return v;
 };
