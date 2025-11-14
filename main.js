@@ -387,7 +387,7 @@
   let v = String(raw).trim().toUpperCase();
 
   // 1) Eliminar TODOS los prefijos TYPE o CUSTOM repetidos o combinados
-  v = v.replace(/(TYPE|TYPE_CUSTOM|CUSTOM)[\s._-]*/gi, "");
+  v = v.replace(/(TYPE_CUSTOM|TYPE|CUSTOM)[\s._-]*/gi, "");
 
   // 2) Si queda "SMS" pero combinado con otros símbolos, limpiamos
   v = v.replace(/[^A-Z0-9]/g, "");
