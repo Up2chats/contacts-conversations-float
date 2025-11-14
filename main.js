@@ -3,7 +3,7 @@
 
   if (window.__GHL_CONVERSATIONS_FLOAT_V3__) return;
   window.__GHL_CONVERSATIONS_FLOAT_V3__ = true;
-  console.log("[CONV-FLOAT] Script v3.1 cargado");
+ 
 
   /* =========================
    *  CONFIG
