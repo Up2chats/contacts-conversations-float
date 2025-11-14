@@ -313,18 +313,24 @@
     });
 
   // OJO: aquí NO usamos searchTerm, solo limit.
-  const fetchConversations = (locId, token, limit) => {
-    const params = [
-      "locationId=" + encodeURIComponent(locId),
-      "limit=" + (limit || PAGE_LIMIT),
-      "status=all",
-      "sort=desc",
-      "sortBy=last_message_date",
-    ];
-    const path = "/conversations/search?" + params.join("&");
-    return apiFetch("GET", path, token);
-  };
+const fetchConversations = (locId, token, { limit, searchTerm } = {}) => {
+  const params = [
+    "locationId=" + encodeURIComponent(locId),
+    "limit=" + (limit || PAGE_LIMIT),
+    "status=all",
+    "sort=desc",
+    "sortBy=last_message_date",
+  ];
 
+  if (searchTerm && searchTerm.trim()) {
+    params.push("searchTerm=" + encodeURIComponent(searchTerm.trim()));
+  }
+
+  const path = "/conversations/search?" + params.join("&");
+  return apiFetch("GET", path, token);
+};
+
+  
   const formatTime = (iso) => {
     if (!iso) return "";
     const d = new Date(iso);
@@ -562,58 +568,55 @@
    *  LOAD
    * ========================= */
 
-  const loadConversations = async (showSpinner = true) => {
-    const locId = getLocationId();
-    const token = getToken();
-    if (!locId || !token) {
-      console.warn("Sin locationId o token configurado para conversaciones.");
-      return;
+const loadConversations = async (showSpinner = true) => {
+  const locId = getLocationId();
+  const token = getToken();
+  if (!locId || !token) {
+    console.warn("Sin locationId o token configurado para conversaciones.");
+    return;
+  }
+
+  const reqId = ++state.lastRequestId;
+
+  if (showSpinner && state.dom.status) {
+    state.dom.status.textContent = "Actualizando conversaciones...";
+  }
+
+  try {
+    const data = await fetchConversations(locId, token, {
+      limit: state.currentLimit || PAGE_LIMIT,
+      searchTerm: state.currentSearchTerm || "",
+    });
+
+    if (reqId !== state.lastRequestId) return;
+
+    const items =
+      data?.conversations ||
+      data?.items ||
+      data?.records ||
+      data?.data ||
+      [];
+
+    const total =
+      data?.total ||
+      data?.totalCount ||
+      items.length;
+
+    state.total = total;
+
+    renderList(items);
+    setMeta(items.length, total);
+    updateLoadMoreButton(items.length, total);
+
+    if (state.dom.status) state.dom.status.textContent = "";
+  } catch (e) {
+    console.error("Error cargando conversaciones", e);
+    if (state.dom.status) {
+      state.dom.status.textContent =
+        "Error al cargar conversaciones. Reintenta más tarde.";
     }
-
-    const reqId = ++state.lastRequestId;
-
-    if (showSpinner && state.dom.status) {
-      state.dom.status.textContent = "Actualizando conversaciones...";
-    }
-
-    try {
-      const data = await fetchConversations(
-        locId,
-        token,
-        state.currentLimit || PAGE_LIMIT
-      );
-      if (reqId !== state.lastRequestId) return;
-
-      const rawItems =
-        data?.conversations ||
-        data?.items ||
-        data?.records ||
-        data?.data ||
-        [];
-
-      const items = filterBySearch(rawItems);
-
-      const total =
-        data?.total ||
-        data?.totalCount ||
-        data?.meta?.total ||
-        rawItems.length;
-
-      state.total = total;
-
-      renderList(items);
-      setMeta(items.length, total);
-      updateLoadMoreButton(rawItems.length, total);
-
-      if (state.dom.status) state.dom.status.textContent = "";
-    } catch (e) {
-      console.error("Error cargando conversaciones", e);
-      if (state.dom.status) {
-        state.dom.status.textContent =
-          "Error al cargar conversaciones. Reintenta más tarde.";
-      }
-    }
-  };
+  }
+};
 
   /* =========================
    *  DRAG DEL PANEL
@@ -787,13 +790,13 @@
       };
     };
 
-    const onSearch = debounceLocal(() => {
-      state.currentSearchTerm = search.value || "";
-      state.currentLimit = PAGE_LIMIT;
-      loadConversations(true);
-    }, 400);
+    const onSearch = debounce(() => {
+  state.currentSearchTerm = search.value || "";
+  state.currentLimit = PAGE_LIMIT;   // reseteamos el límite al buscar
+  loadConversations(true);
+}, 400);
 
-    search.addEventListener("input", onSearch);
+search.addEventListener("input", onSearch);
 
     // primera carga
     loadConversations(true);
