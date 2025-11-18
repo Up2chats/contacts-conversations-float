@@ -1128,7 +1128,12 @@
   window.addEventListener("popstate", () =>
     window.dispatchEvent(new Event("ghl:navigation"))
   );
-  window.addEventListener("ghl:navigation", handle);
+  // Cada vez que cambie la URL, cerramos el panel si está abierto
+window.addEventListener("ghl:navigation", () => {
+  if (state.open) {
+    closePanel();
+  }
+});
 
   handle();
   setTimeout(handle, 500);
