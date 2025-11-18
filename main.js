@@ -1125,9 +1125,19 @@
       };
     } catch {}
   });
-  window.addEventListener("popstate", () =>
-    window.dispatchEvent(new Event("ghl:navigation"))
-  );
+// Cada vez que cambie la URL
+window.addEventListener("ghl:navigation", () => {
+  // Cerrar el panel si está abierto
+  if (state.open) {
+    closePanel();
+  }
+
+  // Si ya no estamos en /location/:id (ej. logout), eliminar el botón
+  if (!getLocationIdFromPath()) {
+    const btn = document.getElementById("ghl-conv-toggle-floating");
+    if (btn) btn.remove();
+  }
+});
   // Cada vez que cambie la URL, cerramos el panel si está abierto
 window.addEventListener("ghl:navigation", () => {
   if (state.open) {
