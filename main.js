@@ -45,7 +45,7 @@
       .${BTN_CLASS}{
         position:fixed;
         bottom:110px;
-        right:24px;
+        right:-10px;
         width:42px;
         height:42px;
         border-radius:999px;
