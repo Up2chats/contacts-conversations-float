@@ -44,7 +44,7 @@
     s.textContent = `
       .${BTN_CLASS}{
         position:fixed;
-        bottom:24px;
+        bottom:80px;
         right:24px;
         width:42px;
         height:42px;
