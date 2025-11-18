@@ -38,17 +38,23 @@
   
   // ¿La URL actual corresponde a una location donde DEBEMOS mostrar el botón?
   const urlMatches = () => {
-    const locInPath = getLocationIdFromPath(); // lo que viene en /location/:id...
-  
-    // Si ni siquiera estamos en /location/:id (ej. /accounts, login, etc.)
-    if (!locInPath) return false;
-  
-    // Si no se pasó data-location-id => se permite cualquier location
-    if (!TARGET_LOCATION_ID) return true;
-  
-    // Si se pasó data-location-id => solo esa location
-    return locInPath === TARGET_LOCATION_ID;
-  };
+  const path = location.pathname || "";
+
+  // 1) NUNCA mostrar en vistas de cuentas de agencia (/accounts, /sub-accounts, etc.)
+  if (/\/accounts(?:\/|$)/.test(path)) {
+    return false;
+  }
+
+  // 2) Necesitamos que haya /location/:id en la URL
+  const locInPath = getLocationIdFromPath(); // lo que viene en /location/:id...
+  if (!locInPath) return false;
+
+  // 3) Si NO se pasó data-location-id => cualquier location es válida
+  if (!TARGET_LOCATION_ID) return true;
+
+  // 4) Si se pasó data-location-id => solo esa location
+  return locInPath === TARGET_LOCATION_ID;
+};
   /* =========================
    *  ESTILOS
    * ========================= */
@@ -1146,21 +1152,18 @@
     } catch {}
   });
 // Cada vez que cambie la URL
- window.addEventListener("ghl:navigation", () => {
-  // 1) Cerrar panel si está abierto
+window.addEventListener("ghl:navigation", () => {
   if (state.open) {
     closePanel();
   }
 
   const btn = document.getElementById("ghl-conv-toggle-floating");
 
-  // 2) Si la URL YA NO es una location válida => quitar botón
   if (!urlMatches()) {
     if (btn) btn.remove();
     return;
   }
 
-  // 3) Si ahora sí estamos en la location objetivo y no hay botón, lo inyectamos
   if (!btn) {
     injectButton();
   }
