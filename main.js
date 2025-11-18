@@ -32,7 +32,23 @@
 
   const getLocationId = () => DATA_LOCATION_ID || getLocationIdFromPath();
   const getToken = () => DATA_TOKEN;
-
+  // Solo mostrar el botón en esta location (si se define en el script)
+  // <script src="..." data-location-id="XXX" data-token="YYY">
+  const TARGET_LOCATION_ID = DATA_LOCATION_ID || "";  // si está vacío => cualquier location
+  
+  // ¿La URL actual corresponde a una location donde DEBEMOS mostrar el botón?
+  const urlMatches = () => {
+    const locInPath = getLocationIdFromPath(); // lo que viene en /location/:id...
+  
+    // Si ni siquiera estamos en /location/:id (ej. /accounts, login, etc.)
+    if (!locInPath) return false;
+  
+    // Si no se pasó data-location-id => se permite cualquier location
+    if (!TARGET_LOCATION_ID) return true;
+  
+    // Si se pasó data-location-id => solo esa location
+    return locInPath === TARGET_LOCATION_ID;
+  };
   /* =========================
    *  ESTILOS
    * ========================= */
@@ -1097,11 +1113,15 @@
   };
 
   const injectButton = () => {
-    ensureStyles();
-    if (document.getElementById("ghl-conv-toggle-floating")) return;
-    const btn = makeToggleButton();
-    document.body.appendChild(btn);
-  };
+  // No metas el botón si la URL actual no corresponde
+  if (!urlMatches()) return;
+
+  ensureStyles();
+  if (document.getElementById("ghl-conv-toggle-floating")) return;
+
+  const btn = makeToggleButton();
+  document.body.appendChild(btn);
+};
 
   const debounce = (fn, ms = 200) => {
     let t;
@@ -1126,22 +1146,23 @@
     } catch {}
   });
 // Cada vez que cambie la URL
-window.addEventListener("ghl:navigation", () => {
-  // Cerrar el panel si está abierto
+ window.addEventListener("ghl:navigation", () => {
+  // 1) Cerrar panel si está abierto
   if (state.open) {
     closePanel();
   }
 
-  // Si ya no estamos en /location/:id (ej. logout), eliminar el botón
-  if (!getLocationIdFromPath()) {
-    const btn = document.getElementById("ghl-conv-toggle-floating");
+  const btn = document.getElementById("ghl-conv-toggle-floating");
+
+  // 2) Si la URL YA NO es una location válida => quitar botón
+  if (!urlMatches()) {
     if (btn) btn.remove();
+    return;
   }
-});
-  // Cada vez que cambie la URL, cerramos el panel si está abierto
-window.addEventListener("ghl:navigation", () => {
-  if (state.open) {
-    closePanel();
+
+  // 3) Si ahora sí estamos en la location objetivo y no hay botón, lo inyectamos
+  if (!btn) {
+    injectButton();
   }
 });
 
